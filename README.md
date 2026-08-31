@@ -31,6 +31,53 @@ Next.js 16.2.9 / React 19 / Tailwind CSS v4 / three.js (@react-three/fiber, drei
 > ⚠️ Next.js 16은 이전 버전과 규약이 다릅니다 (middleware → proxy 등).
 > 코드를 쓰기 전에 `node_modules/next/dist/docs/` 의 해당 문서를 먼저 확인하세요. `AGENTS.md` 참고.
 
+## 배포 (Vercel + Supabase)
+
+데이터 저장소는 **Supabase**(관리형 Postgres), 호스팅은 **Vercel**. 앱은 브라우저에서
+DB 를 직접 건드리지 않는다 — 모든 접근이 서버 API 라우트를 거치고 service_role 키만 쓴다.
+
+### 1. Supabase
+
+1. 프로젝트를 만든다.
+2. **SQL Editor** 에 `supabase/schema.sql` 전체를 붙여넣고 Run (여러 번 실행해도 안전).
+3. 값 두 개를 복사한다.
+   - **Settings > Data API > Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+   - **Settings > API Keys > service_role (secret)** → `SUPABASE_SERVICE_ROLE_KEY`
+
+> ⚠️ `service_role` 은 RLS 를 우회하는 마스터 키다. `NEXT_PUBLIC_` 접두사를 붙이면
+> 번들에 실려 브라우저로 내려간다 — 절대 붙이지 말 것.
+>
+> ⚠️ 무료 티어는 일주일간 요청이 없으면 프로젝트가 일시정지된다.
+> 행사 2~3일 전과 전날에 대시보드를 한 번씩 열어 깨워둔다.
+
+### 2. Vercel
+
+1. GitHub 저장소(비공개)를 만들고 `main` 을 푸시한다.
+2. Vercel 에서 Import — Next.js 는 자동 감지되므로 빌드 설정은 건드리지 않는다.
+3. **Settings > Environment Variables** 에 위 두 값을 등록한다
+   (Production / Preview / Development 전부).
+4. Deploy.
+
+`main` 에 머지하면 자동 재배포된다. 당일 롤백은 Vercel 대시보드 Deployments 에서
+직전 배포를 Promote.
+
+### 3. 배포 후 확인
+
+- [ ] `/` · `/judge` · `/admin` 세 화면 200
+- [ ] `GET /api/state` 응답에 `judgeCode` · `adminPin` 이 **없다**
+- [ ] 운영 화면 PIN 로그인 → 팀 8개 등록 → 심사위원 명단 등록
+- [ ] 경기 시작 → 심사 제출 → 결과 공개까지 한 바퀴
+- [ ] **심사 코드와 운영 PIN 변경** — 초기값(`ANIMAL` / `0825`)이 저장소에 그대로 있다.
+      운영 화면 설정 탭에서 바꾼다. PIN 은 6자리 이상 권장
+- [ ] 리허설 데이터를 넣었다면 본 행사 전 **전체 초기화**
+
+### 환경 변수가 없으면
+
+로컬은 `ai-vibethon.local.json` 파일 저장소로 자동 폴백해서 Supabase 없이도 개발할 수 있다
+(`.env.local` 을 만들면 즉시 Supabase 로 붙는다). **Vercel 에서는 폴백하지 않고 에러를 낸다** —
+읽기 전용 파일시스템이라 첫 쓰기에서 터지고, 설령 써지더라도 람다 인스턴스마다 서로 다른
+대진표를 들게 되기 때문이다. 환경 변수 누락을 행사 중이 아니라 첫 요청에서 알아채기 위한 장치다.
+
 ## 에셋 (`public/`)
 
 | 경로 | 내용 |
@@ -90,5 +137,6 @@ effect 내 `setSparks`. `CardCarousel`: mount 감지·인트로 회전의 effect
 
 ## 가져오지 않은 것
 
-Supabase 연동, 배정 로직, 관리자 페이지, 이벤트 로깅은 원본 서비스 전용이라 제외했습니다.
+배정 로직과 이벤트 로깅은 원본 서비스 전용이라 제외했습니다.
+Supabase 연동과 관리자 페이지는 그 뒤 이 저장소에서 새로 만들었습니다 (위 **배포** 참고).
 데이터가 필요해지면 `@supabase/supabase-js` 를 새로 붙이면 됩니다.
