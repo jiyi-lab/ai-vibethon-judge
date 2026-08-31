@@ -21,11 +21,13 @@ import {
   matchesJudgeCode,
   reset,
   revealResult,
+  roundRankings,
   seekStage,
   setFinal,
   setTimer,
   shuffle,
   startMatch,
+  topTeamsForRound,
   TIMER_PRESETS,
   trackWarnings,
   updateTeam,
@@ -65,7 +67,7 @@ function seeded(): TournamentState {
 }
 
 /**
- * 경기를 시작하고 한쪽 승리로 공개까지.
+ * 경기를 시작하고 한쪽 우세로 공개까지.
  *
  * 점수 집계를 함께 넣는다 — R2 진출이 승패가 아니라 **R1 점수 순위 상위 4팀**이라
  * (drawRound2 → topTeamsForRound), scoreSummary 없이 공개하면 순위가 비어 추첨이 거부된다.
@@ -82,7 +84,7 @@ function play(
   return revealResult(startMatch(state, matchId), matchId, winner, [], [], scores);
 }
 
-/** R1 4경기를 전부 A 승으로 끝낸 상태 → 승자는 팀 0, 2, 4, 6. */
+/** R1 4경기를 전부 A 우세로 끝낸 상태 → 기본 점수도 팀 0, 2, 4, 6 이 상위 4팀. */
 function afterRound1(): TournamentState {
   return ROUND1_IDS.reduce((s, id) => play(s, id, 'A'), seeded());
 }
@@ -234,7 +236,7 @@ test('R1 이 끝나기 전에는 추첨할 수 없다', () => {
   expectError('ROUND1_INCOMPLETE', () => drawRound2(s));
 });
 
-test('추첨은 R1 승자 4팀을 빠짐없이 한 번씩 배치한다', () => {
+test('추첨은 R1 총점 상위 4팀을 빠짐없이 한 번씩 배치한다', () => {
   const s = drawRound2(afterRound1(), fixedRng([0.9, 0.1, 0.5]));
   const placed = ROUND2_IDS.flatMap((id) => {
     const m = getMatch(s, id);
@@ -243,6 +245,24 @@ test('추첨은 R1 승자 4팀을 빠짐없이 한 번씩 배치한다', () => {
 
   assert.equal(canDrawRound2(afterRound1()), true);
   assert.deepEqual([...placed].sort(), [0, 2, 4, 6]);
+});
+
+test('R1 페어에서 낮은 쪽이어도 전체 총점 상위면 R2 로 간다', () => {
+  let s = seeded();
+  s = play(s, 'R1-1', 'A', { A: 99, B: 98 });
+  s = play(s, 'R1-2', 'B', { A: 10, B: 97 });
+  s = play(s, 'R1-3', 'A', { A: 96, B: 20 });
+  s = play(s, 'R1-4', 'A', { A: 95, B: 30 });
+
+  assert.deepEqual(topTeamsForRound(s, 1, 4), [0, 1, 3, 4]);
+
+  const drawn = drawRound2(s, fixedRng([0, 0, 0]));
+  const placed = ROUND2_IDS.flatMap((id) => {
+    const m = getMatch(drawn, id);
+    return [m.a, m.b];
+  });
+
+  assert.deepEqual([...placed].sort(), [0, 1, 3, 4]);
 });
 
 test('추첨 결과는 rng 에 따라 달라진다 — 고정 순서가 아니다', () => {
@@ -280,17 +300,20 @@ test('R2 가 끝나야 결선을 확정할 수 있다', () => {
   expectError('ROUND2_INCOMPLETE', () => setFinal(half));
 });
 
-test('결선 대진은 R2 두 경기의 승자 (추첨 없음)', () => {
+test('결선 대진은 R2 전체 총점 상위 2팀', () => {
   let s = drawRound2(afterRound1(), fixedRng([0.4, 0.7, 0.2]));
-  s = play(s, 'R2-1', 'B');
-  s = play(s, 'R2-2', 'A');
+  const r2a = getMatch(s, 'R2-1');
+  s = play(s, 'R2-1', 'A', { A: 100, B: 99 });
+  s = play(s, 'R2-2', 'B', { A: 10, B: 98 });
 
   assert.equal(canSetFinal(s), true);
   const withFinal = setFinal(s);
   const f = getMatch(withFinal, 'F');
 
-  assert.equal(f.a, getMatch(s, 'R2-1').b);
-  assert.equal(f.b, getMatch(s, 'R2-2').a);
+  assert.equal(f.a, r2a.a);
+  assert.equal(f.b, r2a.b);
+  assert.deepEqual(topTeamsForRound(s, 2, 2), [r2a.a, r2a.b]);
+  assert.deepEqual(roundRankings(s, 2).map((entry) => entry.score), [100, 99, 98, 10]);
   assert.equal(canSetFinal(withFinal), false);
   expectError('FINAL_ALREADY_SET', () => setFinal(withFinal));
 });

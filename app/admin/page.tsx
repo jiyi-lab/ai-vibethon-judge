@@ -14,7 +14,7 @@ import Image from 'next/image';
 import { Wordmark, characterImageSrc } from '@/components/ui';
 import { noteServerNow } from '@/lib/clock';
 import type { Match, Team, Side, TimerState } from '@/lib/tournament';
-import { isAnnounced, topTeamsForRound, winningTeamId } from '@/lib/tournament';
+import { isAnnounced, topTeamsForRound } from '@/lib/tournament';
 import { CRITERIA, emptyMatchFeedback, emptyMatchScores, sideTotal, type FeedbackSet, type MatchFeedback, type MatchScores } from '@/lib/scoring';
 
 
