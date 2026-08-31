@@ -133,7 +133,7 @@ node scripts/shot.mjs http://localhost:3000/admin admin-live
   (저장소가 private 이라 raw URL 임베드는 404 — 링크는 로그인한 멤버에게 열린다):
 
 ```markdown
-[admin-live 데스크톱](https://github.com/tlstkdgus/animal-league/blob/<커밋SHA>/docs/screenshots/admin-live-desktop.png)
+[admin-live 데스크톱](https://github.com/jiyi-lab/ai-vibethon-judge/blob/<커밋SHA>/docs/screenshots/admin-live-desktop.png)
 ```
 
 - 본문 안에 이미지를 **인라인으로** 보이고 싶으면 PR 편집창에 파일을 드래그&드롭한다
