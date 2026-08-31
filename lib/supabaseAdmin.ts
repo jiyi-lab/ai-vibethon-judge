@@ -29,10 +29,11 @@ export const DB_SCHEMA = 'vibethon';
 // 클라이언트 타입은 만들어서 추론한다 — SupabaseClient 의 스키마 제네릭 기본값이
 // 'public' 이라 그대로 쓰면 vibethon 클라이언트가 대입되지 않고, 제네릭 인자 자리를
 // 손으로 적으면 supabase-js 버전이 올라갈 때 조용히 깨진다.
-function createAppClient(url: string, key: string) {
-  return createClient(url, key, {
+function createAppClient(url: string, apiKey: string, authToken: string) {
+  return createClient(url, apiKey, {
     db: { schema: DB_SCHEMA },
     auth: { persistSession: false, autoRefreshToken: false },
+    accessToken: async () => authToken,
   });
 }
 
@@ -49,25 +50,39 @@ let client: AppClient | null = null;
  * 한 벌 더 두는 셈이라는 걸 알고 써야 한다.
  */
 export function supabaseKey(): string | undefined {
+  return supabaseAuthToken();
+}
+
+export function supabaseAuthToken(): string | undefined {
   return process.env.SUPABASE_VIBETHON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+export function supabaseApiKey(): string | undefined {
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) return process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return (
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
 }
 
 /** Supabase 로 붙을 수 있는 상태인지 — 아니면 로컬 파일 저장소로 떨어진다. */
 export function supabaseConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && supabaseKey());
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && supabaseApiKey() && supabaseAuthToken());
 }
 
 export function supabaseAdmin(): AppClient {
   if (client) return client;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = supabaseKey();
-  if (!url || !key) {
+  const apiKey = supabaseApiKey();
+  const authToken = supabaseAuthToken();
+  if (!url || !apiKey || !authToken) {
     throw new Error(
-      'Supabase 환경 변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL 과 SUPABASE_VIBETHON_KEY 를 확인하세요.',
+      'Supabase 환경 변수가 없습니다. NEXT_PUBLIC_SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_VIBETHON_KEY 를 확인하세요.',
     );
   }
 
-  client = createAppClient(url, key);
+  client = createAppClient(url, apiKey, authToken);
   return client;
 }

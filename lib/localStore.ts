@@ -37,7 +37,7 @@ function assertLocalStoreAllowed(): void {
   if (!process.env.VERCEL) return;
   throw new Error(
     'Supabase 환경 변수가 없어 로컬 파일 저장소로 떨어졌습니다. Vercel 프로젝트 설정 > ' +
-      'Environment Variables 에 NEXT_PUBLIC_SUPABASE_URL 과 SUPABASE_VIBETHON_KEY 를 ' +
+      'Environment Variables 에 NEXT_PUBLIC_SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_VIBETHON_KEY 를 ' +
       '등록한 뒤 다시 배포하세요.',
   );
 }

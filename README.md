@@ -68,15 +68,17 @@ Supabase 무료 플랜은 **활성 프로젝트 2개가 계정 전체 한도**(�
    > 인자로 넘기지도 말 것 (`ps` 목록과 셸 히스토리에 남는다).
 
 4. **Settings > Data API > Project URL** 을 복사한다.
+5. **Settings > API Keys** 에서 **Publishable key** 를 복사한다.
 
 ### 2. Vercel
 
 1. GitHub 저장소를 Import — Next.js 는 자동 감지되므로 빌드 설정은 건드리지 않는다.
-2. **Settings > Environment Variables** 에 두 개를 등록한다 (Production / Preview / Development 전부).
+2. **Settings > Environment Variables** 에 세 개를 등록한다 (Production / Preview / Development 전부).
 
    | 이름 | 값 |
    |------|-----|
    | `NEXT_PUBLIC_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+   | `SUPABASE_PUBLISHABLE_KEY` | Supabase 의 publishable key |
    | `SUPABASE_VIBETHON_KEY` | 3번에서 발급한 토큰 |
 
 3. Deploy.

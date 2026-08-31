@@ -1,4 +1,4 @@
-import { DB_SCHEMA, supabaseKey } from '@/lib/supabaseAdmin';
+import { DB_SCHEMA, supabaseApiKey, supabaseAuthToken } from '@/lib/supabaseAdmin';
 import { handling, ok } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
@@ -18,8 +18,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export async function GET(): Promise<Response> {
   return handling(async () => {
     const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = supabaseKey();
-    const payload = key ? decodeJwtPayload(key) : null;
+    const apiKey = supabaseApiKey();
+    const authToken = supabaseAuthToken();
+    const payload = authToken ? decodeJwtPayload(authToken) : null;
 
     let url: URL;
     try {
@@ -31,20 +32,22 @@ export async function GET(): Promise<Response> {
         schema: DB_SCHEMA,
         urlPresent: Boolean(rawUrl),
         urlValid: false,
-        keyPresent: Boolean(key),
+        apiKeyPresent: Boolean(apiKey),
+        authTokenPresent: Boolean(authToken),
         keyLooksJwt: Boolean(payload),
         role: payload?.role ?? null,
       });
     }
 
-    if (!key) {
+    if (!apiKey || !authToken) {
       return ok({
         configured: false,
         schema: DB_SCHEMA,
         urlPresent: true,
         urlValid: true,
         host: url.host,
-        keyPresent: false,
+        apiKeyPresent: Boolean(apiKey),
+        authTokenPresent: Boolean(authToken),
       });
     }
 
@@ -52,8 +55,8 @@ export async function GET(): Promise<Response> {
     try {
       const res = await fetch(endpoint, {
         headers: {
-          apikey: key,
-          authorization: `Bearer ${key}`,
+          apikey: apiKey,
+          authorization: `Bearer ${authToken}`,
           accept: 'application/json',
           'accept-profile': DB_SCHEMA,
         },
@@ -64,7 +67,8 @@ export async function GET(): Promise<Response> {
         configured: true,
         schema: DB_SCHEMA,
         host: url.host,
-        keyPresent: true,
+        apiKeyPresent: true,
+        authTokenPresent: true,
         keyLooksJwt: Boolean(payload),
         role: payload?.role ?? null,
         status: res.status,
@@ -78,7 +82,8 @@ export async function GET(): Promise<Response> {
         schema: DB_SCHEMA,
         host: url.host,
         endpoint,
-        keyPresent: true,
+        apiKeyPresent: true,
+        authTokenPresent: true,
         keyLooksJwt: Boolean(payload),
         role: payload?.role ?? null,
         fetchOk: false,
