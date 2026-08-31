@@ -64,9 +64,22 @@ function seeded(): TournamentState {
   });
 }
 
-/** 경기를 시작하고 한쪽 승리로 공개까지. */
-function play(state: TournamentState, matchId: MatchId, winner: Side): TournamentState {
-  return revealResult(startMatch(state, matchId), matchId, winner);
+/**
+ * 경기를 시작하고 한쪽 승리로 공개까지.
+ *
+ * 점수 집계를 함께 넣는다 — R2 진출이 승패가 아니라 **R1 점수 순위 상위 4팀**이라
+ * (drawRound2 → topTeamsForRound), scoreSummary 없이 공개하면 순위가 비어 추첨이 거부된다.
+ * 승자 쪽을 항상 높게, 경기마다 다른 값으로 줘서 동점 없이 순위가 정해지게 한다.
+ */
+function play(
+  state: TournamentState,
+  matchId: MatchId,
+  winner: Side,
+  scoreSummary?: Record<Side, number>,
+): TournamentState {
+  const nth = Number(matchId.split('-')[1] ?? 1);
+  const scores = scoreSummary ?? (winner === 'A' ? { A: 90 - nth, B: 20 - nth } : { A: 20 - nth, B: 90 - nth });
+  return revealResult(startMatch(state, matchId), matchId, winner, [], [], scores);
 }
 
 /** R1 4경기를 전부 A 승으로 끝낸 상태 → 승자는 팀 0, 2, 4, 6. */

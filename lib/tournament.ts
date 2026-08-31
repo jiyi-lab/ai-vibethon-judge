@@ -713,20 +713,28 @@ export function seekStage(
   rng: Rng = Math.random,
 ): TournamentState {
   let s = reset(state);
-  const winA = (id: string) => {
+  /**
+   * 지나가는 경기는 전부 A 승 (SPEC §6.3).
+   *
+   * 점수 집계도 같이 넣어야 한다 — R2 진출은 승패가 아니라 **R1 점수 순위 상위 4팀**이라
+   * (drawRound2 → topTeamsForRound), scoreSummary 없이 공개하면 순위가 비어서 추첨이
+   * ROUND1_INCOMPLETE 로 거부된다. 즉 이게 없으면 r1-done 이후 시점으로는 점프 자체가 안 됐다.
+   * 경기마다 다른 값을 줘서 동점 없이 순위가 확정되게 한다.
+   */
+  const winA = (id: string, nth: number) => {
     s = startMatch(s, id);
-    s = revealResult(s, id, 'A');
+    s = revealResult(s, id, 'A', [], [], { A: 90 - nth, B: 20 - nth });
   };
   if (stage === 'pre') return s;
   if (stage === 'r1-live') return startMatch(s, 'R1-1');
-  for (const id of ROUND1_IDS) winA(id);
+  ROUND1_IDS.forEach((id, i) => winA(id, i));
   if (stage === 'r1-done') return s;
   s = drawRound2(s, rng);
   if (stage === 'drawn') return s;
-  for (const id of ROUND2_IDS) winA(id);
+  ROUND2_IDS.forEach((id, i) => winA(id, i));
   if (stage === 'r2-done') return s;
   s = setFinal(s);
   s = startMatch(s, FINAL_ID);
   if (stage === 'final-live') return s;
-  return revealResult(s, FINAL_ID, 'A');
+  return revealResult(s, FINAL_ID, 'A', [], [], { A: 90, B: 20 });
 }
