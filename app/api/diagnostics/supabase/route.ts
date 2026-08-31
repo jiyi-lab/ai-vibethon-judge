@@ -1,5 +1,5 @@
 import { DB_SCHEMA, supabaseKey } from '@/lib/supabaseAdmin';
-import { fail, handling, ok } from '@/lib/api';
+import { handling, ok } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,11 +72,19 @@ export async function GET(): Promise<Response> {
         bodyPreview: text.slice(0, 500),
       });
     } catch (err) {
-      return fail(
-        502,
-        'SUPABASE_FETCH_FAILED',
-        err instanceof Error ? `${err.name}: ${err.message}` : 'Supabase fetch failed',
-      );
+      const cause = err instanceof Error && 'cause' in err ? (err as Error & { cause?: unknown }).cause : null;
+      return ok({
+        configured: true,
+        schema: DB_SCHEMA,
+        host: url.host,
+        endpoint,
+        keyPresent: true,
+        keyLooksJwt: Boolean(payload),
+        role: payload?.role ?? null,
+        fetchOk: false,
+        fetchError: err instanceof Error ? `${err.name}: ${err.message}` : 'Supabase fetch failed',
+        fetchCause: cause instanceof Error ? `${cause.name}: ${cause.message}` : cause ? String(cause) : null,
+      });
     }
   });
 }
