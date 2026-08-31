@@ -1,6 +1,7 @@
 import 'server-only';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { supabaseConfigured } from './supabaseAdmin.ts';
 import { createInitialState, type TournamentState } from './tournament.ts';
 import type { VoteRow } from './votes.ts';
 
@@ -14,8 +15,12 @@ type LocalData = {
 const FILE = path.join(process.cwd(), 'ai-vibethon.local.json');
 const DEFAULT_LOCAL_JUDGES = ['고보승', '최상일', '박재현'];
 
+/**
+ * Supabase 설정이 없으면 로컬 파일 저장소로 떨어진다 — 키 없이도 개발할 수 있게.
+ * 환경변수 이름 판정은 supabaseAdmin 이 단일 출처다 (전용 키/service_role 둘 다 받는다).
+ */
 export function shouldUseLocalStore(): boolean {
-  return !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return !supabaseConfigured();
 }
 
 /**
@@ -32,7 +37,7 @@ function assertLocalStoreAllowed(): void {
   if (!process.env.VERCEL) return;
   throw new Error(
     'Supabase 환경 변수가 없어 로컬 파일 저장소로 떨어졌습니다. Vercel 프로젝트 설정 > ' +
-      'Environment Variables 에 NEXT_PUBLIC_SUPABASE_URL 과 SUPABASE_SERVICE_ROLE_KEY 를 ' +
+      'Environment Variables 에 NEXT_PUBLIC_SUPABASE_URL 과 SUPABASE_VIBETHON_KEY 를 ' +
       '등록한 뒤 다시 배포하세요.',
   );
 }

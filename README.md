@@ -34,42 +34,79 @@ Next.js 16.2.9 / React 19 / Tailwind CSS v4 / three.js (@react-three/fiber, drei
 ## 배포 (Vercel + Supabase)
 
 데이터 저장소는 **Supabase**(관리형 Postgres), 호스팅은 **Vercel**. 앱은 브라우저에서
-DB 를 직접 건드리지 않는다 — 모든 접근이 서버 API 라우트를 거치고 service_role 키만 쓴다.
+DB 를 직접 건드리지 않는다 — 모든 접근이 서버 API 라우트를 거친다.
+
+### 왜 기존 프로젝트에 얹는가
+
+Supabase 무료 플랜은 **활성 프로젝트 2개가 계정 전체 한도**(조직별이 아니다)라
+이 행사용 프로젝트를 새로 만들 수 없었다. 그래서 다른 용도로 쓰던 기존 프로젝트에
+얹되, 호스트 프로젝트가 이 앱 때문에 위험해지지 않도록 두 겹으로 나눈다.
+
+| 나눈 것 | 무엇을 막는가 |
+|---------|---------------|
+| **스키마** `vibethon` | 테이블 이름 충돌, 호스트의 `public` 과 뒤섞임 |
+| **role** `vibethon_app` | 키가 새도 `vibethon` 밖으로는 아무것도 못 한다 |
+
+**role 분리가 본체다.** 스키마만 나누는 것으로는 권한이 전혀 줄지 않는다 —
+`service_role` 은 그 프로젝트 DB **전체**의 마스터 키라, 그 키를 이 앱과 Vercel
+환경변수에 넣는 순간 행사 앱이 뚫렸을 때 호스트 프로젝트 데이터까지 열린다.
 
 ### 1. Supabase
 
-1. 프로젝트를 만든다.
-2. **SQL Editor** 에 `supabase/schema.sql` 전체를 붙여넣고 Run (여러 번 실행해도 안전).
-3. 값 두 개를 복사한다.
-   - **Settings > Data API > Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
-   - **Settings > API Keys > service_role (secret)** → `SUPABASE_SERVICE_ROLE_KEY`
+1. 기존 프로젝트의 **SQL Editor** 에 `supabase/schema.sql` 전체를 붙여넣고 Run.
+   스키마·전용 role·테이블 2개·권한·RLS 정책이 한 번에 만들어진다 (멱등, 여러 번 실행해도 안전).
+2. **Settings > API > Exposed schemas** 에 `vibethon` 을 추가한다.
+   PostgREST 가 서빙할 스키마 목록이다 — 추가해도 grant 없는 role 은 여전히 못 읽는다.
+3. **Settings > API > JWT Settings** 에서 **JWT Secret** 을 복사해 전용 키를 발급한다.
 
-> ⚠️ `service_role` 은 RLS 를 우회하는 마스터 키다. `NEXT_PUBLIC_` 접두사를 붙이면
-> 번들에 실려 브라우저로 내려간다 — 절대 붙이지 말 것.
->
-> ⚠️ 무료 티어는 일주일간 요청이 없으면 프로젝트가 일시정지된다.
-> 행사 2~3일 전과 전날에 대시보드를 한 번씩 열어 깨워둔다.
+   ```bash
+   SUPABASE_JWT_SECRET='...' node scripts/mint-supabase-key.mjs --ref <project-ref>
+   ```
+
+   > ⚠️ JWT 시크릿을 jwt.io 같은 웹사이트에 붙여넣지 말 것 — 그 자체가 유출이다.
+   > 이 스크립트는 로컬에서 표준 crypto 모듈로만 서명하고 아무 데도 전송하지 않는다.
+   > 인자로 넘기지도 말 것 (`ps` 목록과 셸 히스토리에 남는다).
+
+4. **Settings > Data API > Project URL** 을 복사한다.
 
 ### 2. Vercel
 
-1. GitHub 저장소(비공개)를 만들고 `main` 을 푸시한다.
-2. Vercel 에서 Import — Next.js 는 자동 감지되므로 빌드 설정은 건드리지 않는다.
-3. **Settings > Environment Variables** 에 위 두 값을 등록한다
-   (Production / Preview / Development 전부).
-4. Deploy.
+1. GitHub 저장소를 Import — Next.js 는 자동 감지되므로 빌드 설정은 건드리지 않는다.
+2. **Settings > Environment Variables** 에 두 개를 등록한다 (Production / Preview / Development 전부).
 
-`main` 에 머지하면 자동 재배포된다. 당일 롤백은 Vercel 대시보드 Deployments 에서
-직전 배포를 Promote.
+   | 이름 | 값 |
+   |------|-----|
+   | `NEXT_PUBLIC_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+   | `SUPABASE_VIBETHON_KEY` | 3번에서 발급한 토큰 |
+
+3. Deploy.
+
+`main` 에 머지하면 자동 재배포된다. 당일 롤백은 Deployments 에서 직전 배포를 Promote.
+
+> **대체 경로** — 프로젝트가 새 비대칭 서명 키만 쓰고 있어 JWT Secret 을 못 구하면,
+> `SUPABASE_SERVICE_ROLE_KEY` 에 service_role 키를 넣어도 동작한다.
+> 다만 그건 호스트 프로젝트까지 열리는 키를 한 벌 더 두는 것이라 위 표의 보호가 사라진다.
+> 스키마 분리만 남는다는 점을 알고 쓸 것.
 
 ### 3. 배포 후 확인
 
 - [ ] `/` · `/judge` · `/admin` 세 화면 200
 - [ ] `GET /api/state` 응답에 `judgeCode` · `adminPin` 이 **없다**
 - [ ] 운영 화면 PIN 로그인 → 팀 8개 등록 → 심사위원 명단 등록
-- [ ] 경기 시작 → 심사 제출 → 결과 공개까지 한 바퀴
+- [ ] 경기 시작 → 심사 제출 → 결과 공개까지 한 바퀴 (여기까지 되면 전용 role 권한이 충분하다는 뜻)
 - [ ] **심사 코드와 운영 PIN 변경** — 초기값(`ANIMAL` / `0825`)이 저장소에 그대로 있다.
       운영 화면 설정 탭에서 바꾼다. PIN 은 6자리 이상 권장
 - [ ] 리허설 데이터를 넣었다면 본 행사 전 **전체 초기화**
+
+### 행사가 끝나면
+
+호스트 프로젝트에서 이 앱의 흔적만 통째로 지울 수 있다 (`supabase/schema.sql` 맨 아래).
+
+```sql
+drop schema vibethon cascade;
+revoke vibethon_app from authenticator;
+drop role vibethon_app;
+```
 
 ### 환경 변수가 없으면
 

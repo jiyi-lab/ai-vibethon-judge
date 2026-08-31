@@ -10,15 +10,19 @@
 import 'server-only';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
+import { supabaseKey } from './supabaseAdmin.ts';
 import type { TournamentState } from './tournament.ts';
 
 export const ADMIN_COOKIE = 'al_admin';
 const COOKIE_MAX_AGE = 60 * 60 * 18; // 18시간 — 행사 당일 하루를 넉넉히 덮는다
 
 function secret(): string {
-  // 별도 시크릿을 두지 않고 서비스 롤 키를 HMAC 키로 재사용한다.
+  // 별도 시크릿을 두지 않고 DB 접속 키를 HMAC 키로 재사용한다.
   // 서버에만 존재하는 값이면 충분하고, 환경 변수 하나라도 줄이는 편이 당일 사고를 줄인다.
-  return process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.ADMIN_SESSION_SECRET ?? 'local-ai-vibethon-admin';
+  // supabaseKey() 를 거치는 이유: 키 이름이 전용 키(SUPABASE_VIBETHON_KEY)로 바뀌었고,
+  // 여기서 이름을 따로 읽으면 키를 바꿨을 때 조용히 폴백 상수로 떨어져 세션이
+  // 전 배포에서 같은 값이 된다 (2026-08-31).
+  return supabaseKey() ?? process.env.ADMIN_SESSION_SECRET ?? 'local-ai-vibethon-admin';
 }
 
 /** PIN → 세션 토큰. 같은 PIN 이면 언제나 같은 값 (비교용). */
