@@ -1,0 +1,50 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+# 값이 빈 템플릿만 예외로 올린다. 실제 키가 든 .env.local 은 위 규칙으로 계속 차단됨
+!.env*.example
+
+# 로컬 전용 비밀값 — 절대 커밋하지 말 것
+*.local.json
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# 디자이너 원본 에셋 (미최적화 대용량 — 사용 확정 시 리사이즈본만 커밋)
+/public/14th_hackathon_character/
+/public/14th_hackathon_badge/

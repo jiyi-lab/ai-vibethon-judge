@@ -1,0 +1,38 @@
+card-place-1.ogg ~ card-place-4.ogg, card-shuffle.ogg,
+card-fan-1.ogg, chips-collide-1.ogg ~ chips-collide-2.ogg
+
+출처: Casino Audio (v1.1) by Kenney Vleugels (kenney.nl)
+라이선스: Creative Commons Zero (CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+원본 팩: https://kenney.nl/assets/casino-audio
+(다운로드 미러: https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips)
+
+hit-orchestra.ogg (원본 파일명 jingles_HIT15.ogg)
+
+출처: Short jingles by Kenney Vleugels (kenney.nl)
+라이선스: CC0
+다운로드: https://opengameart.org/content/85-short-music-jingles
+
+fanfare.mp3 (원본 파일명 sboe.mp3)
+
+출처: "Hyper Ultra Fanfare" — https://opengameart.org/content/hyper-ultra-fanfare
+라이선스: CC0
+
+dragon-studio-sword-slice-2-393845.mp3
+
+출처: "Sword Slice 2" by Dragon Studio — Pixabay (https://pixabay.com/sound-effects/sword-slice-2-393845/)
+라이선스: Pixabay Content License (무료 사용, 출처 표기 불요)
+용도: 대결 포커스(VS) 등장 (2026-08-23 운영자 선곡)
+
+freesound_community-card-mixing-48088.mp3
+
+출처: "Card Mixing" by freesound_community — Pixabay (https://pixabay.com/sound-effects/card-mixing-48088/)
+라이선스: Pixabay Content License (무료 사용, 출처 표기 불요)
+용도: R2 추첨 셔플~배치 (2026-08-23 운영자 선곡)
+
+fronbondi_skegs-drum-huge-cinematic-tom-hit-283585.mp3
+
+출처: "Drum Huge Cinematic Tom Hit" by fronbondi_skegs — Pixabay
+(https://pixabay.com/sound-effects/drum-huge-cinematic-tom-hit-283585/)
+라이선스: Pixabay Content License (무료 사용, 출처 표기 불요)
+용도: 투표 공개 표 카드 플립 (2026-08-23 운영자 선곡)

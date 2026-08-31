@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0e0e0e;
+  --surface: #1a1a1a;
+  --surface2: #232323;
+  --border: rgba(255,255,255,0.07);
+  --text: #f0f0f0;
+  --text-sub: rgba(255,255,255,0.45);
+  --orange: #ec6c01;
+  --orange-glow: rgba(236,108,1,0.18);
+
+  /* 트랙 컬러 4종 — 공식 트랙 배너의 배경색 매핑 (2026-08-19 배너 시안 확인).
+     SJF 핑크 / AAC 그린 / LIKELION 퍼플 / OPEN 스카이. 오렌지는 트랙색이 아니라
+     대회 아이덴티티 색이다 — 초기 추정(SJF=오렌지)이 틀렸던 지점 */
+  --track-sjf: #e85f9d;      /* 핑크 */
+  --track-aac: #5ab546;      /* 그린 */
+  --track-likelion: #574b9c; /* 퍼플 */
+  --track-open: #009be4;     /* 스카이블루 */
+
+  --live: #ff3b30;
+  --done: #34c759;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --font-sans: var(--font-suit);
+  --font-display: var(--font-anton);
+  /* 영문 서브 서체 — 브랜드 가이드(8/19): 영문 ANTON(제목)·INTER(서브).
+     font-en 유틸로 노출 (경기 코드·영문 라벨 등 순수 라틴 서브 텍스트 전용) */
+  --font-en: var(--font-inter), var(--font-suit), sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-suit), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  min-height: 100dvh;
+}
