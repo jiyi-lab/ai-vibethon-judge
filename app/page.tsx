@@ -21,7 +21,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 type PublicState = { teams: Team[]; matches: Match[]; rev: number };
 type RankingSequence = { round: Round; changedMatchId: string; nonce: number };
-type VisibleRankingEntry = { teamIndex: number; score: number | null; order: number; matchId: string };
+type VisibleRankingEntry = { teamIndex: number; score: number; order: number; matchId: string };
 const RANKING_TAKEOVER_MS = 6500;
 
 // ------------------------------------------------------------
@@ -44,19 +44,15 @@ function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: 
     .filter((match) => match.round === round)
     .flatMap((match, matchOrder) =>
       (['A', 'B'] as const).flatMap((side, sideOrder) => {
+        if (match.id === hiddenMatchId || !match.scoreSummary) return [];
         const teamIndex = side === 'A' ? match.a : match.b;
         if (teamIndex === null) return [];
-        const score = match.id === hiddenMatchId ? undefined : match.scoreSummary?.[side];
-        return [{ teamIndex, score: score ?? null, order: matchOrder * 2 + sideOrder, matchId: match.id }];
+        const score = match.scoreSummary[side];
+        return score === undefined ? [] : [{ teamIndex, score, order: matchOrder * 2 + sideOrder, matchId: match.id }];
       }),
     );
 
-  return entries.sort((a, b) => {
-    if (a.score !== null && b.score !== null) return b.score - a.score || a.teamIndex - b.teamIndex;
-    if (a.score !== null) return -1;
-    if (b.score !== null) return 1;
-    return a.order - b.order;
-  });
+  return entries.sort((a, b) => b.score - a.score || a.teamIndex - b.teamIndex);
 }
 
 function activeRankingRound(state: PublicState): Round {
@@ -94,11 +90,8 @@ function RankingTakeover({
         <div className="flex items-end justify-between gap-5">
           <div>
             <p className="font-display text-xl text-white/30 2xl:text-2xl">LIVE RANKING</p>
-            <h2 className="font-display mt-1 text-6xl text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h2>
+            <h2 className="mt-1 text-6xl font-extrabold text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h2>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-lg font-extrabold text-white/45">
-            점수 비공개
-          </span>
         </div>
         <div className="mt-8 grid gap-3 lg:grid-cols-2 2xl:gap-4">
           {visible.length > 0 ? (
@@ -122,7 +115,6 @@ function RankingTakeover({
                 <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
                 <div className="min-w-0 flex-1">
                   <span className="line-clamp-1 text-3xl font-extrabold text-white 2xl:text-4xl">{teamName(state, entry.teamIndex)}</span>
-                  {entry.score === null && <p className="mt-1 text-sm font-extrabold text-white/30 2xl:text-base">집계 대기</p>}
                 </div>
               </div>
             ))
@@ -140,7 +132,6 @@ function RankingTakeover({
 function LiveRankingStage({ state, round }: { state: PublicState; round: Round }) {
   const ranking = visibleRoundRankings(state, round);
   const title = round === 1 ? 'ROUND 1 실시간 순위' : round === 2 ? 'ROUND 2 실시간 순위' : 'FINAL 순위';
-  const scoredCount = ranking.filter((entry) => entry.score !== null).length;
 
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
@@ -149,29 +140,29 @@ function LiveRankingStage({ state, round }: { state: PublicState; round: Round }
         <div className="mb-7 flex items-end justify-between gap-5">
           <div>
             <p className="font-display text-xl text-white/30 2xl:text-2xl">LIVE RANKING</p>
-            <h1 className="font-display mt-1 text-6xl text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h1>
+            <h1 className="mt-1 text-6xl font-extrabold text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h1>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-lg font-extrabold text-white/45">
-            점수 비공개 · {scoredCount}/{ranking.length} 집계
-          </span>
         </div>
         <div className="grid gap-3 lg:grid-cols-2 2xl:gap-4">
-          {ranking.map((entry, i) => (
-            <div
-              key={entry.teamIndex}
-              className={`ranking-row flex items-center gap-5 rounded-2xl border px-5 py-4 ${
-                entry.score === null ? 'border-white/6 bg-white/[0.02] opacity-55' : 'border-white/10 bg-white/[0.045]'
-              }`}
-              style={{ animationDelay: `${0.05 + i * 0.05}s` }}
-            >
-              <span className="font-en w-14 text-4xl font-extrabold text-white/35 2xl:text-5xl">{i + 1}</span>
-              <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
-              <div className="min-w-0 flex-1">
-                <span className="line-clamp-1 text-3xl font-extrabold text-white 2xl:text-4xl">{teamName(state, entry.teamIndex)}</span>
-                {entry.score === null && <p className="mt-1 text-sm font-extrabold text-white/30 2xl:text-base">아직 평가 전</p>}
+          {ranking.length > 0 ? (
+            ranking.map((entry, i) => (
+              <div
+                key={entry.teamIndex}
+                className="ranking-row flex items-center gap-5 rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-4"
+                style={{ animationDelay: `${0.05 + i * 0.05}s` }}
+              >
+                <span className="font-en w-14 text-4xl font-extrabold text-white/35 2xl:text-5xl">{i + 1}</span>
+                <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
+                <div className="min-w-0 flex-1">
+                  <span className="line-clamp-1 text-3xl font-extrabold text-white 2xl:text-4xl">{teamName(state, entry.teamIndex)}</span>
+                </div>
               </div>
+            ))
+          ) : (
+            <div className="col-span-full rounded-2xl border border-dashed border-white/10 py-24 text-center text-3xl font-extrabold text-white/30">
+              집계 대기
             </div>
-          ))}
+          )}
         </div>
       </div>
     </section>
