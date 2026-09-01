@@ -694,7 +694,6 @@ function MatchesTab({
   askConfirm: (c: Confirm) => void;
 }) {
   const r1 = state.matches.filter((m) => m.round === 1);
-  const canShowFinalRanking = r1.every((m) => m.status === 'done');
   const live = state.matches.find((m) => m.status === 'live');
 
   const startWithGuard = (match: Match) => {
@@ -744,28 +743,12 @@ function MatchesTab({
     <div>
       {state.trackWarnings.length > 0 && (
         <div className="mb-4 rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
-          ⚠ 트랙 불일치: {state.trackWarnings.join(', ')} — 라운드 1 은 같은 트랙끼리입니다 (규정 §2). 팀 관리에서 순서를
+          ⚠ 트랙 불일치: {state.trackWarnings.join(', ')} — 조별 발표는 같은 트랙끼리입니다. 팀 관리에서 순서를
           조정하세요.
         </div>
       )}
 
-      {section(
-        '조별 발표',
-        <button
-          disabled={!canShowFinalRanking || busy || state.finalRankingShown}
-          onClick={() =>
-            askConfirm({
-              title: '최종 결과 보기',
-              body: '모든 조의 총점 기준 최종 LIVE RANKING 화면을 스크린에 띄웁니다.',
-              confirmLabel: '최종 결과 보기',
-              onConfirm: () => run({ action: 'showFinalRanking' }),
-            })
-          }
-          className="rounded-lg bg-[var(--orange)] px-4 py-1.5 text-sm font-bold text-white disabled:opacity-25"
-        >
-          {state.finalRankingShown ? '최종 결과 표시 중' : '최종 결과 보기'}
-        </button>,
-      )}
+      {section('조별 발표')}
       <div className="grid gap-3 sm:grid-cols-2">
         {r1.map((m) => (
           <MatchCard key={m.id} match={m} state={state} busy={busy} onStart={() => startWithGuard(m)} onReveal={revealWithConfirm(m)} onAnnounce={() => announceMatch(m)} />

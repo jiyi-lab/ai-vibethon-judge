@@ -15,14 +15,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { CharacterArt, TRACK_COLORS, Wordmark, characterImageSrc } from '@/components/ui';
-import { armSfx, playDrum, playVersus } from '@/lib/sfx';
+import { armSfx, playDrum, playVersus, sfxBlocked, unlockSfx } from '@/lib/sfx';
 import { isAnnounced, roundRankings, winningTeamId, type Match, type Round, type Team } from '@/lib/tournament';
 import type { CSSProperties, ReactNode } from 'react';
 
 type PublicState = { teams: Team[]; matches: Match[]; finalRankingShown: boolean; rev: number };
-type RankingSequence = { changedMatchId: string; nonce: number };
 type VisibleRankingEntry = { teamIndex: number; score: number; order: number };
-const RANKING_TAKEOVER_MS = 6500;
+const FINAL_RANKING_STORAGE_KEY = 'ai-vibethon-final-ranking';
 
 // ------------------------------------------------------------
 // 데이터 헬퍼
@@ -151,6 +150,28 @@ function LiveRankingStage({ state }: { state: PublicState }) {
             </div>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalRankingPrompt({ onShow }: { onShow: () => void }) {
+  return (
+    <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
+      <div className="ranking-aura absolute inset-0" aria-hidden />
+      <div className="relative text-center">
+        <Wordmark className="mx-auto mb-6 h-4 w-auto text-[var(--orange)]" />
+        <h1 className="font-display text-6xl text-(--orange) lg:text-8xl 2xl:text-9xl">FINAL RESULT</h1>
+        <button
+          onClick={async () => {
+            await unlockSfx();
+            playVersus();
+            onShow();
+          }}
+          className="mt-10 rounded-2xl border border-[var(--orange)]/70 bg-[var(--orange)] px-14 py-5 text-2xl font-extrabold text-white shadow-[0_0_38px_rgba(236,108,1,0.28)] transition-transform hover:scale-[1.03] active:scale-[0.99] 2xl:px-16 2xl:py-6 2xl:text-3xl"
+        >
+          최종 결과 보기
+        </button>
       </div>
     </section>
   );
@@ -571,15 +592,7 @@ function FocusLive({ state, match }: { state: PublicState; match: Match }) {
  * 원거리 가독을 위해 다시 뺐다 — 큰 행사장 뒷줄까지 읽혀야 해서 남은 두 요소를
  * 최대 크기로 키운다. 승자 강조는 여전히 [발표]가 여는 결과 화면의 몫.
  */
-function FreezeReveal({
-  state,
-  match,
-  onRevealComplete,
-}: {
-  state: PublicState;
-  match: Match;
-  onRevealComplete?: (match: Match) => void;
-}) {
+function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
   const votes = match.votes ?? [];
   const names = match.voteNames ?? [];
   const chipCharacter = (side: 'A' | 'B') => teamAt(state, side === 'A' ? match.a : match.b)?.character ?? null;
@@ -588,12 +601,6 @@ function FreezeReveal({
   // 오픈된 칩 수 — 집계·이름 표기가 따라간다. 시계는 chipFlip 의 animationend 하나
   // (JS 타이머로 CSS 타이밍을 수치 복제하면 두 시계가 되어 어긋난 전례 — PR #24)
   const [opened, setOpened] = useState(0);
-  const completedRef = useRef(false);
-  const matchRef = useRef(match);
-
-  useEffect(() => {
-    matchRef.current = match;
-  }, [match]);
 
   // 도입 무음 (8/23 운영자 — 부채꼴 폴리도 제거: 첫 플립 드럼과 겹친다.
   // mixkit 노티는 #72→#73→#75→#77 로 제거됨. 이 화면 소리는 플립 드럼뿐)
@@ -604,13 +611,6 @@ function FreezeReveal({
     const timer = setTimeout(() => setOpened(votes.length), 0);
     return () => clearTimeout(timer);
   }, [votes.length]);
-
-  useEffect(() => {
-    if (!onRevealComplete || completedRef.current || votes.length === 0 || opened < votes.length) return;
-    completedRef.current = true;
-    const timer = setTimeout(() => onRevealComplete(matchRef.current), 900);
-    return () => clearTimeout(timer);
-  }, [match.id, onRevealComplete, opened, votes.length]);
 
   const openTally = (side: 'A' | 'B') => votes.slice(0, opened).filter((v) => v === side).length;
   return (
@@ -1120,6 +1120,47 @@ function ChampionTakeover({ state, final }: { state: PublicState; final: Match }
   );
 }
 
+/**
+ * 소리 배지 — 자동재생 정책에 막혀 있는 동안에만 뜬다.
+ *
+ * 브라우저는 **그 문서에서 클릭·키 입력이 한 번이라도 있기 전까지** AudioContext 를
+ * suspended 로 둔다. 그런데 스크린은 프로젝터 전용이라 운영자가 클릭하는 창은 언제나
+ * 운영 콘솔 쪽이고 스크린 창은 아무도 안 건드린다 — VS 등장도 표 플립도 조용히 무음이
+ * 된다. 새로고침할 때마다 다시 잠기므로 개발 중에는 더 자주 겪는다.
+ * (2026-08-31 도입 → 랭킹 개편 때 유실 → 2026-09-01 복구. 없앤 동안 정확히 이 증상이 났다)
+ *
+ * 그래서 "지금 소리가 막혀 있다"를 띄우는 것 자체가 기능이다. 무대에서 문구를 전부
+ * 뺐지만(§6.1) 이 배지는 막혀 있는 동안에만 보이고 누르면 사라진다. 누른 김에 드럼을
+ * 한 번 울린다 — 조용히 성공하면 성공했는지 알 방법이 없다.
+ *
+ * scripts/stage-launch.bat 로 연 무대는 자동재생 허용 플래그가 있어 처음부터 안 뜬다.
+ */
+function SfxGate() {
+  const [blocked, setBlocked] = useState(false);
+
+  useEffect(() => {
+    const tick = () => setBlocked(sfxBlocked());
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (!blocked) return null;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const ok = await unlockSfx();
+        if (ok) playDrum(); // 살아난 걸 귀로 확인시켜 준다
+        setBlocked(sfxBlocked());
+      }}
+      className="fixed bottom-5 right-5 z-50 rounded-full border border-(--orange)/70 bg-black/75 px-5 py-3 text-base font-extrabold text-white/90 backdrop-blur transition-transform hover:scale-[1.03] active:scale-[0.99]"
+    >
+      🔇 소리 꺼짐 — 눌러서 켜기
+    </button>
+  );
+}
+
 // ------------------------------------------------------------
 // 메인
 // ------------------------------------------------------------
@@ -1131,7 +1172,13 @@ export default function ViewerPage() {
   const [finalSeq, setFinalSeq] = useState<Match | null>(null);
   // R2 추첨 시퀀스 — 추첨 순간의 준결승 스냅샷 고정 (폴링 갱신에 흔들리지 않게)
   const [drawSeq, setDrawSeq] = useState<[Match, Match] | null>(null);
-  const [rankingSeq, setRankingSeq] = useState<RankingSequence | null>(null);
+  // 첫 렌더에서 바로 읽는다 — 이펙트로 미루면 setState 가 한 번 더 돌고(cascading render),
+  // react-hooks/set-state-in-effect 에도 걸린다. SSR 에는 localStorage 가 없으니 가드한다.
+  // 하이드레이션 불일치는 없다: 첫 폴링 스냅샷이 오기 전(state === null)에는 로딩 화면만
+  // 그리므로 이 값이 출력에 쓰이지 않는다.
+  const [localFinalRankingShown, setLocalFinalRankingShown] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem(FINAL_RANKING_STORAGE_KEY) === '1',
+  );
   // 결선 카운트다운 (8/24 시안) — [공개] 감지 즉시 5초 카운트, 끝나면 표 연출 →
   // 우승 테이크오버 순. 카운트 도는 동안 공개할 결선 스냅샷은 ref 에 보관
   const [countdown, setCountdown] = useState(false);
@@ -1139,27 +1186,8 @@ export default function ViewerPage() {
   const revRef = useRef(0);
   const prevAnnouncedRef = useRef<Record<string, boolean> | null>(null); // null = 첫 스냅샷 전
   const prevDrawnRef = useRef<boolean | null>(null);
-  const rankingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closedRevealRef = useRef<Set<string>>(new Set());
   const [closedRevealIds, setClosedRevealIds] = useState<ReadonlySet<string>>(() => new Set());
-
-  const showRankingSequence = useCallback((match: Match) => {
-    if (match.id === 'F' || closedRevealRef.current.has(match.id)) return;
-    const nonce = Date.now();
-    setRankingSeq({ changedMatchId: match.id, nonce });
-    if (rankingTimerRef.current) clearTimeout(rankingTimerRef.current);
-    rankingTimerRef.current = setTimeout(() => {
-      closedRevealRef.current.add(match.id);
-      setRankingSeq((current) => (current?.nonce === nonce ? null : current));
-      setClosedRevealIds(new Set(closedRevealRef.current));
-    }, RANKING_TAKEOVER_MS);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (rankingTimerRef.current) clearTimeout(rankingTimerRef.current);
-    };
-  }, []);
 
   const poll = useCallback(async () => {
     try {
@@ -1195,7 +1223,8 @@ export default function ViewerPage() {
           (m) => m.id !== 'F' && isAnnounced(m) && prevA[m.id] === false && !closedRevealRef.current.has(m.id),
         );
         if (rankingJust) {
-          showRankingSequence(rankingJust);
+          closedRevealRef.current.add(rankingJust.id);
+          setClosedRevealIds(new Set(closedRevealRef.current));
         }
       }
       prevAnnouncedRef.current = Object.fromEntries(next.matches.map((m) => [m.id, isAnnounced(m)]));
@@ -1212,7 +1241,7 @@ export default function ViewerPage() {
     } catch {
       /* 마지막 정상 스냅샷 유지 */
     }
-  }, [showRankingSequence]);
+  }, []);
 
   useEffect(() => {
     // 1.5초 폴링 (8/22 저녁, 3초에서 단축): 스크린이 프로젝터 전용이라 클라이언트가
@@ -1229,6 +1258,19 @@ export default function ViewerPage() {
   // 무대 운영: 프로젝터 창에서 F(전체화면)를 누르는 것만으로도 언락된다.
   useEffect(() => armSfx(), []);
 
+  // 대회가 초기화되면 저장된 "최종 결과 보기" 플래그도 지운다 — 안 지우면 다음 대회에서
+  // R1 이 다시 끝나는 순간 버튼을 누르지도 않았는데 최종 순위로 넘어간다.
+  // 화면 표시는 위 finalRankingVisible 파생이 이미 막고 있고, 여기서는 localStorage 라는
+  // 외부 상태를 되돌리는 게 목적이다 — 그 정리와 짝이 맞아야 해서 setState 가 붙는다.
+  useEffect(() => {
+    if (!state) return;
+    const groupDone = state.matches.filter((m) => m.round === 1).every((m) => m.status === 'done');
+    if (groupDone || !localFinalRankingShown) return;
+    localStorage.removeItem(FINAL_RANKING_STORAGE_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 외부 상태(localStorage) 정리와 함께 돌려놓는 값
+    setLocalFinalRankingShown(false);
+  }, [localFinalRankingShown, state]);
+
   if (state === null) {
     return (
       <main className="grid min-h-dvh place-items-center">
@@ -1239,6 +1281,10 @@ export default function ViewerPage() {
 
   const live = state.matches.find((m) => m.status === 'live') ?? null;
   const final = byId(state, 'F');
+  const allGroupResultsDone = state.matches.filter((m) => m.round === 1).every((m) => m.status === 'done');
+  // 파생으로 둔다 — 대회가 초기화되면 아래 이펙트가 플래그를 끄기 전에도 바로 숨는다
+  // (이펙트에만 맡기면 한 프레임 동안 지난 대회의 최종 순위가 번쩍인다).
+  const finalRankingVisible = localFinalRankingShown && allGroupResultsDone;
   // 정지 화면은 상태 파생 — done && 미발표(표 있음)면 새로고침해도 그대로 유지된다.
   // 결선은 해당 없음: 공개 즉시 발표 간주(결선 특례)라 done 이면 항상 announced
   const frozen =
@@ -1686,29 +1732,30 @@ export default function ViewerPage() {
       {/* 헤더·푸터·안내 문구는 전부 제거 (8/22 운영자: 무대에 필요없는 멘트 삭제) —
           화면은 연출과 대진표만 남긴다. 본문 우선순위:
           순위 클로즈업 > 표 정지 화면 > 결선 표 연출 > 추첨 시퀀스 > live 대결 포커스 > 대진표 (§6.1) */}
-      {state.finalRankingShown ? (
+      {finalRankingVisible ? (
         <LiveRankingStage state={state} />
-      ) : rankingSeq ? (
-        <RankingTakeover
-          key={rankingSeq.nonce}
-          state={state}
-          changedMatchId={rankingSeq.changedMatchId}
-        />
       ) : frozen ? (
-        <FreezeReveal key={frozen.id} state={state} match={frozen} onRevealComplete={showRankingSequence} />
+        <FreezeReveal key={frozen.id} state={state} match={frozen} />
       ) : finalSeq ? (
         <FreezeReveal key={finalSeq.id} state={state} match={finalSeq} />
       ) : drawSeq ? (
         <DrawSequence state={state} semis={drawSeq} />
       ) : live ? (
         <FocusLive state={state} match={live} />
+      ) : allGroupResultsDone ? (
+        <FinalRankingPrompt
+          onShow={() => {
+            localStorage.setItem(FINAL_RANKING_STORAGE_KEY, '1');
+            setLocalFinalRankingShown(true);
+          }}
+        />
       ) : (
         <LiveRankingStage state={state} />
       )}
 
       {/* 우승 테이크오버 — 결선 공개(=발표, 결선 특례) 시. 카운트다운 → 표 연출
           (finalSeq) 이 도는 동안은 뒤로 미룬다 (0표 백업·새로고침은 카운트 없이 직행) */}
-      {!state.finalRankingShown && champion && countdown && (
+      {!finalRankingVisible && champion && countdown && (
         <Countdown
           onDone={() => {
             setCountdown(false);
@@ -1722,8 +1769,9 @@ export default function ViewerPage() {
           }}
         />
       )}
-      {!state.finalRankingShown && champion && !finalSeq && !countdown && <ChampionTakeover state={state} final={final} />}
+      {!finalRankingVisible && champion && !finalSeq && !countdown && <ChampionTakeover state={state} final={final} />}
 
+      <SfxGate />
     </main>
   );
 }
