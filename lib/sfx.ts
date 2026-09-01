@@ -48,44 +48,68 @@ const MAX_LOAD_ATTEMPTS = 5;
 let ctx: AudioContext | null = null;
 let hitBuffer: AudioBuffer | null = null;
 let drumBuffer: AudioBuffer | null = null;
-let loading: Promise<void> | null = null;
+let hitLoading: Promise<void> | null = null;
+let drumLoading: Promise<void> | null = null;
 let loadAttempts = 0;
 let resuming: Promise<void> | null = null;
 
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
 
 function context(): AudioContext | null {
-  if (typeof window === 'undefined' || typeof AudioContext === 'undefined') return null;
+  if (typeof window === 'undefined') return null;
+  const AudioContextCtor = window.AudioContext;
+  if (!AudioContextCtor) return null;
   // 닫힌 컨텍스트(오디오 장치 변경 등)는 되살릴 수 없다 — 새로 만든다
   if (ctx && ctx.state === 'closed') ctx = null;
-  if (!ctx) ctx = new AudioContext();
+  if (!ctx) ctx = new AudioContextCtor();
   return ctx;
 }
 
-/** 샘플 로드 — 실패해도 다음 요청이 다시 시도한다 (진행 중 프라미스는 공유). */
-function load(c: AudioContext): Promise<void> {
-  if (hitBuffer && drumBuffer) return Promise.resolve();
-  if (loading) return loading;
+async function decodeSample(c: AudioContext, url: string): Promise<AudioBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(String(res.status));
+  return c.decodeAudioData(await res.arrayBuffer());
+}
+
+function loadHit(c: AudioContext): Promise<void> {
+  if (hitBuffer) return Promise.resolve();
+  if (hitLoading) return hitLoading;
   if (loadAttempts >= MAX_LOAD_ATTEMPTS) return Promise.resolve();
   loadAttempts += 1;
-  loading = (async () => {
-    const decode = async (url: string) => {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(String(res.status));
-      return c.decodeAudioData(await res.arrayBuffer());
-    };
+  hitLoading = (async () => {
     try {
-      const [hit, drum] = await Promise.all([decode(HIT_SOURCE), decode(DRUM_SOURCE)]);
-      hitBuffer = hit;
-      drumBuffer = drum;
+      hitBuffer = await decodeSample(c, HIT_SOURCE);
       loadAttempts = 0; // 성공했으면 재시도 카운터를 되돌린다
     } catch {
       /* 다음 재생 요청이 다시 시도한다 */
     } finally {
-      loading = null;
+      hitLoading = null;
     }
   })();
-  return loading;
+  return hitLoading;
+}
+
+function loadDrum(c: AudioContext): Promise<void> {
+  if (drumBuffer) return Promise.resolve();
+  if (drumLoading) return drumLoading;
+  if (loadAttempts >= MAX_LOAD_ATTEMPTS) return Promise.resolve();
+  loadAttempts += 1;
+  drumLoading = (async () => {
+    try {
+      drumBuffer = await decodeSample(c, DRUM_SOURCE);
+      loadAttempts = 0; // 성공했으면 재시도 카운터를 되돌린다
+    } catch {
+      /* 다음 재생 요청이 다시 시도한다 */
+    } finally {
+      drumLoading = null;
+    }
+  })();
+  return drumLoading;
+}
+
+/** 샘플 로드 — 실패해도 다음 요청이 다시 시도한다 (진행 중 프라미스는 공유). */
+function load(c: AudioContext): Promise<void> {
+  return Promise.all([loadHit(c), loadDrum(c)]).then(() => undefined);
 }
 
 /** suspended 컨텍스트 깨우기 — 요청이 겹쳐도 resume 은 한 번만 건다. */
@@ -102,6 +126,20 @@ function wake(c: AudioContext): Promise<void> {
   return resuming;
 }
 
+function prime(c: AudioContext): void {
+  try {
+    const gain = c.createGain();
+    gain.gain.value = 0.00001;
+    const osc = c.createOscillator();
+    osc.frequency.value = 440;
+    osc.connect(gain).connect(c.destination);
+    osc.start();
+    osc.stop(c.currentTime + 0.03);
+  } catch {
+    /* 프라임 실패도 화면을 막으면 안 된다 */
+  }
+}
+
 /**
  * 재생 게이트 — 준비돼 있으면 같은 프레임에 바로, 아니면 깨우고 받아온 뒤
  * 지각 허용치 안에서만 실행한다. 준비가 안 됐어도 로드는 걸어두므로 다음
@@ -110,7 +148,7 @@ function wake(c: AudioContext): Promise<void> {
 function schedule(run: (c: AudioContext) => void): void {
   const c = context();
   if (!c) return;
-  if (c.state === 'running' && hitBuffer && drumBuffer) {
+  if (c.state === 'running') {
     run(c);
     return;
   }
@@ -136,7 +174,12 @@ export function armSfx(): (() => void) | undefined {
   void load(c);
   void wake(c); // 자동재생 허용 환경(scripts/stage-launch.bat)에서는 이것만으로 켜진다
 
-  const unlock = () => void wake(c);
+  const unlock = () => {
+    void wake(c).then(() => {
+      prime(c);
+      void load(c);
+    });
+  };
   const events = ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown'] as const;
   for (const type of events) addEventListener(type, unlock, { capture: true, passive: true });
   const onVisible = () => {
@@ -250,7 +293,10 @@ export function playVersus(): void {
  */
 export function playDrum(): void {
   schedule((c) => {
-    if (!drumBuffer) return;
+    if (!drumBuffer) {
+      playImpact(c, 0.45);
+      return;
+    }
     try {
       const src = c.createBufferSource();
       src.buffer = drumBuffer;

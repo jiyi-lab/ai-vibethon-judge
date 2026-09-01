@@ -20,6 +20,7 @@ import { isAnnounced, roundRankings, topTeamsForRound, winningTeamId, type Match
 import type { CSSProperties, ReactNode } from 'react';
 
 type PublicState = { teams: Team[]; matches: Match[]; rev: number };
+type RankingSequence = { round: Round; changedMatchId: string; nonce: number };
 
 // ------------------------------------------------------------
 // 데이터 헬퍼
@@ -49,7 +50,7 @@ function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: 
     .sort((a, b) => b.score - a.score || a.teamIndex - b.teamIndex);
 }
 
-function LiveRankingPanel({
+function RankingTakeover({
   state,
   round,
   changedMatchId,
@@ -66,43 +67,51 @@ function LiveRankingPanel({
   const visible = ranking.slice(0, limit);
 
   return (
-    <aside className="ranking-panel w-full max-w-sm shrink-0 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur lg:w-72 2xl:w-80 2xl:p-5">
-      <div className="flex items-end justify-between gap-3">
-        <h2 className="font-display text-2xl text-(--orange) 2xl:text-3xl">{title}</h2>
-        <span className="text-xs font-bold text-white/35">점수 비공개</span>
-      </div>
-      <div className="mt-4 space-y-2">
-        {visible.length > 0 ? (
-          visible.map((entry, i) => (
-            <div
-              key={entry.teamIndex}
-              className={`ranking-row flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5 ${
-                previousRanks.has(entry.teamIndex)
-                  ? previousRanks.get(entry.teamIndex)! > i + 1
-                    ? 'ranking-up'
-                    : previousRanks.get(entry.teamIndex)! < i + 1
-                      ? 'ranking-down'
-                      : ''
-                  : changedMatchId
-                    ? 'ranking-new'
-                    : ''
-              }`}
-              style={{ animationDelay: `${i * 0.08}s` }}
-            >
-              <span className="font-en w-8 text-lg font-extrabold text-white/35">{i + 1}</span>
-              <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-8" sizes="32px" />
-              <span className="line-clamp-1 min-w-0 flex-1 text-base font-extrabold text-white 2xl:text-lg">
-                {teamName(state, entry.teamIndex)}
-              </span>
-            </div>
-          ))
-        ) : (
-          <div className="rounded-lg border border-dashed border-white/10 py-8 text-center text-sm font-bold text-white/30">
-            집계 대기
+    <section className="ranking-stage fixed inset-0 z-20 grid place-items-center overflow-hidden bg-black px-6">
+      <div className="ranking-aura absolute inset-0" aria-hidden />
+      <div className="ranking-panel w-full max-w-5xl rounded-3xl border border-white/10 bg-black/45 p-8 backdrop-blur lg:p-10 2xl:max-w-6xl 2xl:p-12">
+        <div className="flex items-end justify-between gap-5">
+          <div>
+            <p className="font-display text-xl text-white/30 2xl:text-2xl">LIVE RANKING</p>
+            <h2 className="font-display mt-1 text-6xl text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h2>
           </div>
-        )}
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-lg font-extrabold text-white/45">
+            점수 비공개
+          </span>
+        </div>
+        <div className="mt-8 grid gap-3 lg:grid-cols-2 2xl:gap-4">
+          {visible.length > 0 ? (
+            visible.map((entry, i) => (
+              <div
+                key={entry.teamIndex}
+                className={`ranking-row flex items-center gap-5 rounded-2xl border border-white/8 bg-white/[0.035] px-5 py-4 ${
+                  previousRanks.has(entry.teamIndex)
+                    ? previousRanks.get(entry.teamIndex)! > i + 1
+                      ? 'ranking-up'
+                      : previousRanks.get(entry.teamIndex)! < i + 1
+                        ? 'ranking-down'
+                        : ''
+                    : changedMatchId
+                      ? 'ranking-new'
+                      : ''
+                }`}
+                style={{ animationDelay: `${0.25 + i * 0.08}s` }}
+              >
+                <span className="font-en w-14 text-4xl font-extrabold text-white/35 2xl:text-5xl">{i + 1}</span>
+                <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
+                <span className="line-clamp-1 min-w-0 flex-1 text-3xl font-extrabold text-white 2xl:text-4xl">
+                  {teamName(state, entry.teamIndex)}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-full rounded-2xl border border-dashed border-white/10 py-20 text-center text-3xl font-extrabold text-white/30">
+              집계 대기
+            </div>
+          )}
+        </div>
       </div>
-    </aside>
+    </section>
   );
 }
 
@@ -542,10 +551,8 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
   }, [votes.length]);
 
   const openTally = (side: 'A' | 'B') => votes.slice(0, opened).filter((v) => v === side).length;
-  const showRanking = votes.length === 0 || opened >= votes.length;
-
   return (
-    <div className="grid flex-1 place-items-center gap-6 py-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-7 2xl:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="grid flex-1 place-items-center gap-6 py-6">
       <div className="flex min-w-0 flex-col items-center justify-center gap-8 lg:gap-10 2xl:gap-12">
         {/* 라운드 + 집계 — 뒷줄 가독이 목표라 화면 요소 중 최대 크기 */}
         <div className="flex w-full flex-col items-center gap-1">
@@ -597,7 +604,7 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
             <div
               key={i}
               className="flex flex-col items-center gap-3"
-              style={{ '--chipw': `min(18rem, max(8rem, calc((100vw - 25rem) / ${votes.length} - 1.8rem)))` } as CSSProperties}
+              style={{ '--chipw': `min(21rem, max(9rem, calc((100vw - 6rem) / ${votes.length} - 2rem)))` } as CSSProperties}
             >
               {/* 심사위원 명의 — 카드 위 (8/23 운영자 지시), 플립이 끝난 뒤에만
                   (뒷면 상태에서 이름이 먼저 보이면 다음 표를 예고하는 꼴).
@@ -633,7 +640,7 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
                     }}
                   >
                     {chipCharacter(side) ? (
-                      <Image src={characterImageSrc(chipCharacter(side)!)} alt="" fill sizes="288px" className="object-cover" />
+                      <Image src={characterImageSrc(chipCharacter(side)!)} alt="" fill sizes="336px" className="object-cover" />
                     ) : (
                       <span
                         className="grid h-full w-full place-items-center rounded-xl border-2 px-4 text-center text-3xl font-extrabold"
@@ -644,7 +651,7 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
                     )}
                   </div>
                   <div className="chip-face chip-back absolute inset-0">
-                    <Image src="/card-back-Q-ver3.png" alt="" fill sizes="288px" className="object-cover" />
+                    <Image src="/card-back-Q-ver3.png" alt="" fill sizes="336px" className="object-cover" />
                   </div>
                 </div>
               </div>
@@ -652,7 +659,6 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
           ))}
         </div>
       </div>
-      {showRanking && <LiveRankingPanel state={state} round={match.round} changedMatchId={match.id} />}
     </div>
   );
 }
@@ -1063,6 +1069,7 @@ export default function ViewerPage() {
   const [finalSeq, setFinalSeq] = useState<Match | null>(null);
   // R2 추첨 시퀀스 — 추첨 순간의 준결승 스냅샷 고정 (폴링 갱신에 흔들리지 않게)
   const [drawSeq, setDrawSeq] = useState<[Match, Match] | null>(null);
+  const [rankingSeq, setRankingSeq] = useState<RankingSequence | null>(null);
   // 결선 카운트다운 (8/24 시안) — [공개] 감지 즉시 5초 카운트, 끝나면 표 연출 →
   // 우승 테이크오버 순. 카운트 도는 동안 공개할 결선 스냅샷은 ref 에 보관
   const [countdown, setCountdown] = useState(false);
@@ -1100,6 +1107,16 @@ export default function ViewerPage() {
         if (finalJust) {
           pendingFinalRef.current = (finalJust.votes?.length ?? 0) > 0 ? finalJust : null;
           setCountdown(true);
+        }
+        const rankingJust = next.matches.find(
+          (m) => m.id !== 'F' && isAnnounced(m) && prevA[m.id] === false,
+        );
+        if (rankingJust) {
+          const nonce = Date.now();
+          setRankingSeq({ round: rankingJust.round, changedMatchId: rankingJust.id, nonce });
+          setTimeout(() => {
+            setRankingSeq((current) => (current?.nonce === nonce ? null : current));
+          }, 6500);
         }
       }
       prevAnnouncedRef.current = Object.fromEntries(next.matches.map((m) => [m.id, isAnnounced(m)]));
@@ -1597,6 +1614,13 @@ export default function ViewerPage() {
         <FreezeReveal state={state} match={frozen} />
       ) : finalSeq ? (
         <FreezeReveal state={state} match={finalSeq} />
+      ) : rankingSeq ? (
+        <RankingTakeover
+          key={rankingSeq.nonce}
+          state={state}
+          round={rankingSeq.round}
+          changedMatchId={rankingSeq.changedMatchId}
+        />
       ) : drawSeq ? (
         <DrawSequence state={state} semis={drawSeq} />
       ) : live ? (
