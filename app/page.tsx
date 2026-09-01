@@ -268,26 +268,30 @@ function FinalRankingPrompt({ onShow }: { onShow: () => void }) {
  * 그래서 unlockSfx() 를 먼저 기다린 뒤 넘어간다. 그래야 곧이어 마운트되는
  * FocusLive 의 칼 스윙이 제때 난다.
  */
-function ReadyPrompt({ match, onStart }: { match: Match; onStart: () => void }) {
-  const label = matchLabel(match);
+function ReadyPrompt({ match, onStart }: { match?: Match | null; onStart?: () => void }) {
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
       <div className="ranking-aura absolute inset-0" aria-hidden />
       <div className="relative text-center">
-        <span className="font-display text-3xl text-(--orange) lg:text-4xl 2xl:text-5xl">{label}</span>
-        <h1 className="font-display mt-2 text-6xl text-white lg:text-8xl 2xl:text-9xl">ARE YOU READY?</h1>
-        <button
-          onClick={() => {
-            // await 금지 — 위 FinalRankingPrompt 와 같은 이유. 언락은 걸어만 두고
-            // 화면은 즉시 넘긴다. 곧이어 마운트되는 FocusLive 의 칼 스윙은
-            // schedule() 의 지각 허용치 안에서 따라온다.
-            void unlockSfx();
-            onStart();
-          }}
-          className="mt-10 rounded-2xl border border-[var(--orange)]/70 bg-[var(--orange)] px-14 py-5 text-2xl font-extrabold text-white shadow-[0_0_38px_rgba(236,108,1,0.28)] transition-transform hover:scale-[1.03] active:scale-[0.99] 2xl:px-16 2xl:py-6 2xl:text-3xl"
-        >
-          대결 시작
-        </button>
+        {/* 행사 시작 전에는 라벨도 버튼도 없다 — 아직 시작할 경기가 없으니
+            누를 게 있으면 오히려 오해를 부른다. 운영 콘솔이 1조를 시작하면
+            같은 화면에 라운드 표기와 버튼이 붙는 식으로 이어진다. */}
+        {match && <span className="font-display text-3xl text-(--orange) lg:text-4xl 2xl:text-5xl">{matchLabel(match)}</span>}
+        <h1 className={`font-display text-6xl text-white lg:text-8xl 2xl:text-9xl ${match ? 'mt-2' : ''}`}>ARE YOU READY?</h1>
+        {match && onStart && (
+          <button
+            onClick={() => {
+              // await 금지 — 위 FinalRankingPrompt 와 같은 이유. 언락은 걸어만 두고
+              // 화면은 즉시 넘긴다. 곧이어 마운트되는 FocusLive 의 칼 스윙은
+              // schedule() 의 지각 허용치 안에서 따라온다.
+              void unlockSfx();
+              onStart();
+            }}
+            className="mt-10 rounded-2xl border border-[var(--orange)]/70 bg-[var(--orange)] px-14 py-5 text-2xl font-extrabold text-white shadow-[0_0_38px_rgba(236,108,1,0.28)] transition-transform hover:scale-[1.03] active:scale-[0.99] 2xl:px-16 2xl:py-6 2xl:text-3xl"
+          >
+            대결 시작
+          </button>
+        )}
       </div>
     </section>
   );
@@ -1836,8 +1840,13 @@ export default function ViewerPage() {
             setLocalFinalRankingShown(true);
           }}
         />
-      ) : (
+      ) : anyGroupDone ? (
         <LiveRankingStage state={state} />
+      ) : (
+        // 행사 시작 전 첫 화면 (2026-09-01 운영자: "첫 화면은 ARE YOU READY? 여야 한다").
+        // 집계된 게 하나도 없는 상태에서 "LIVE RANKING · 집계 대기" 를 띄우면
+        // 시작 전 무대에 빈 표가 걸려 있는 꼴이다.
+        <ReadyPrompt />
       )}
 
       {/* 우승 테이크오버 — 결선 공개(=발표, 결선 특례) 시. 카운트다운 → 표 연출
