@@ -52,19 +52,21 @@ function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: 
 function LiveRankingPanel({
   state,
   round,
-  hiddenMatchId,
+  changedMatchId,
 }: {
   state: PublicState;
   round: Round;
-  hiddenMatchId?: string;
+  changedMatchId?: string;
 }) {
-  const ranking = visibleRoundRankings(state, round, hiddenMatchId);
+  const ranking = visibleRoundRankings(state, round);
+  const previousRanking = visibleRoundRankings(state, round, changedMatchId);
+  const previousRanks = new Map(previousRanking.map((entry, i) => [entry.teamIndex, i + 1]));
   const title = round === 1 ? 'ROUND 1 순위' : round === 2 ? 'ROUND 2 순위' : 'FINAL 순위';
   const limit = round === 1 ? 8 : round === 2 ? 4 : 2;
   const visible = ranking.slice(0, limit);
 
   return (
-    <aside className="w-full max-w-sm shrink-0 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur lg:w-72 2xl:w-80 2xl:p-5">
+    <aside className="ranking-panel w-full max-w-sm shrink-0 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur lg:w-72 2xl:w-80 2xl:p-5">
       <div className="flex items-end justify-between gap-3">
         <h2 className="font-display text-2xl text-(--orange) 2xl:text-3xl">{title}</h2>
         <span className="text-xs font-bold text-white/35">점수 비공개</span>
@@ -74,7 +76,18 @@ function LiveRankingPanel({
           visible.map((entry, i) => (
             <div
               key={entry.teamIndex}
-              className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5"
+              className={`ranking-row flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5 ${
+                previousRanks.has(entry.teamIndex)
+                  ? previousRanks.get(entry.teamIndex)! > i + 1
+                    ? 'ranking-up'
+                    : previousRanks.get(entry.teamIndex)! < i + 1
+                      ? 'ranking-down'
+                      : ''
+                  : changedMatchId
+                    ? 'ranking-new'
+                    : ''
+              }`}
+              style={{ animationDelay: `${i * 0.08}s` }}
             >
               <span className="font-en w-8 text-lg font-extrabold text-white/35">{i + 1}</span>
               <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-8" sizes="32px" />
@@ -89,9 +102,6 @@ function LiveRankingPanel({
           </div>
         )}
       </div>
-      {hiddenMatchId && (
-        <p className="mt-3 text-center text-xs font-bold text-white/30">현재 개표 중인 경기는 카드 공개 후 반영</p>
-      )}
     </aside>
   );
 }
@@ -532,7 +542,7 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
   }, [votes.length]);
 
   const openTally = (side: 'A' | 'B') => votes.slice(0, opened).filter((v) => v === side).length;
-  const rankingHiddenMatchId = votes.length > 0 && opened < votes.length ? match.id : undefined;
+  const showRanking = votes.length === 0 || opened >= votes.length;
 
   return (
     <div className="grid flex-1 place-items-center gap-6 py-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-7 2xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -642,7 +652,7 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
           ))}
         </div>
       </div>
-      <LiveRankingPanel state={state} round={match.round} hiddenMatchId={rankingHiddenMatchId} />
+      {showRanking && <LiveRankingPanel state={state} round={match.round} changedMatchId={match.id} />}
     </div>
   );
 }
@@ -1523,11 +1533,55 @@ export default function ViewerPage() {
           to { opacity: 1; transform: translate(-50%, -50%) rotate(15deg); }
         }
         @keyframes beamShimmer { 50% { opacity: 0.55; } }
+        .ranking-panel {
+          opacity: 0;
+          transform: translateX(26px) scale(0.98);
+          animation: rankingPanelIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+        }
+        @keyframes rankingPanelIn {
+          to { opacity: 1; transform: none; }
+        }
+        .ranking-row {
+          opacity: 0;
+          animation: rankingRowIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes rankingRowIn {
+          from { opacity: 0; transform: translateY(18px); }
+          to { opacity: 1; transform: none; }
+        }
+        .ranking-up {
+          animation-name: rankingMoveUp;
+          box-shadow: 0 0 24px rgba(236,108,1,0.28);
+          border-color: rgba(236,108,1,0.45);
+        }
+        @keyframes rankingMoveUp {
+          0% { opacity: 0; transform: translateY(34px) scale(0.97); }
+          55% { opacity: 1; transform: translateY(-7px) scale(1.03); }
+          100% { opacity: 1; transform: none; }
+        }
+        .ranking-down {
+          animation-name: rankingMoveDown;
+        }
+        @keyframes rankingMoveDown {
+          0% { opacity: 0; transform: translateY(-20px) scale(0.98); }
+          100% { opacity: 1; transform: none; }
+        }
+        .ranking-new {
+          animation-name: rankingNew;
+          box-shadow: 0 0 28px rgba(236,108,1,0.35);
+          border-color: rgba(236,108,1,0.5);
+        }
+        @keyframes rankingNew {
+          0% { opacity: 0; transform: translateX(28px) scale(0.95); }
+          55% { opacity: 1; transform: translateX(-5px) scale(1.04); }
+          100% { opacity: 1; transform: none; }
+        }
         @media (prefers-reduced-motion: reduce) {
           /* !important: 추첨 카드의 이동·플립은 인라인 animation 이라 클래스만으로는 못 끈다 */
           .live-pulse, .card-reveal, .champion-rise,
           .chip-outer, .chip-inner, .draw-outer, .draw-name,
-          .vs-backdrop, .vs-glow, .vs-beam { animation: none !important; }
+          .vs-backdrop, .vs-glow, .vs-beam,
+          .ranking-panel, .ranking-row { animation: none !important; opacity: 1 !important; transform: none !important; }
           /* 우승 무대 — 원본의 축소 규칙 그대로: 흔들림·플래시·충격파·포일·그레인만 끄고,
              페이드 계열(블룸·빔·레터 드롭·와이프)은 유지. 카드는 페이드 등장으로 대체 */
           .champ-shake, .champ-wave, .champ-flash, .champ-scan, .champ-foil, .champ-grain { animation: none !important; }

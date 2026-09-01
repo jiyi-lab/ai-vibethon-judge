@@ -38,6 +38,17 @@ const JOBS = [
     band: { x: 200, y: 1368, w: 640, h: 108 }, // 원본 락업 bbox x379~652 / y1396~1439
     sample: { x: 220, y: 1330 },
     mark: { color: '#e77127', height: 44, centerX: 520, centerY: 1418 },
+    wordmark: {
+      // 원본 LIKELION UNIV. bbox x416~628 / y120~156
+      band: { x: 360, y: 100, w: 320, h: 82 },
+      sample: { x: 360, y: 190 },
+      color: '#e77127',
+      centerX: 520,
+      centerY: 144,
+      size: 58,
+      lines: ['LIKELION'],
+      lineGap: 0,
+    },
   },
   {
     src: 'card-back-0624.png',
