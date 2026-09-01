@@ -15,8 +15,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { CharacterArt, TRACK_COLORS, Wordmark, characterImageSrc } from '@/components/ui';
-import { armSfx, playDrum, playVersus, sfxBlocked, unlockSfx } from '@/lib/sfx';
-import { isAnnounced, roundRankings, topTeamsForRound, winningTeamId, type Match, type Team } from '@/lib/tournament';
+import { armSfx, playDrum, playVersus } from '@/lib/sfx';
+import { isAnnounced, roundRankings, topTeamsForRound, winningTeamId, type Match, type Round, type Team } from '@/lib/tournament';
 import type { CSSProperties, ReactNode } from 'react';
 
 type PublicState = { teams: Team[]; matches: Match[]; rev: number };
@@ -35,6 +35,66 @@ function teamName(state: PublicState, index: number | null): string {
 }
 
 const byId = (state: PublicState, id: string) => state.matches.find((m) => m.id === id)!;
+
+function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: string) {
+  return state.matches
+    .filter((match) => match.round === round && match.id !== hiddenMatchId && match.status === 'done' && match.scoreSummary)
+    .flatMap((match) =>
+      (['A', 'B'] as const).flatMap((side) => {
+        const teamIndex = side === 'A' ? match.a : match.b;
+        const score = match.scoreSummary?.[side];
+        return teamIndex === null || score === undefined ? [] : [{ teamIndex, score }];
+      }),
+    )
+    .sort((a, b) => b.score - a.score || a.teamIndex - b.teamIndex);
+}
+
+function LiveRankingPanel({
+  state,
+  round,
+  hiddenMatchId,
+}: {
+  state: PublicState;
+  round: Round;
+  hiddenMatchId?: string;
+}) {
+  const ranking = visibleRoundRankings(state, round, hiddenMatchId);
+  const title = round === 1 ? 'ROUND 1 순위' : round === 2 ? 'ROUND 2 순위' : 'FINAL 순위';
+  const limit = round === 1 ? 8 : round === 2 ? 4 : 2;
+  const visible = ranking.slice(0, limit);
+
+  return (
+    <aside className="w-full max-w-sm shrink-0 rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur lg:w-72 2xl:w-80 2xl:p-5">
+      <div className="flex items-end justify-between gap-3">
+        <h2 className="font-display text-2xl text-(--orange) 2xl:text-3xl">{title}</h2>
+        <span className="text-xs font-bold text-white/35">점수 비공개</span>
+      </div>
+      <div className="mt-4 space-y-2">
+        {visible.length > 0 ? (
+          visible.map((entry, i) => (
+            <div
+              key={entry.teamIndex}
+              className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5"
+            >
+              <span className="font-en w-8 text-lg font-extrabold text-white/35">{i + 1}</span>
+              <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-8" sizes="32px" />
+              <span className="line-clamp-1 min-w-0 flex-1 text-base font-extrabold text-white 2xl:text-lg">
+                {teamName(state, entry.teamIndex)}
+              </span>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-lg border border-dashed border-white/10 py-8 text-center text-sm font-bold text-white/30">
+            집계 대기
+          </div>
+        )}
+      </div>
+      {hiddenMatchId && (
+        <p className="mt-3 text-center text-xs font-bold text-white/30">현재 개표 중인 경기는 카드 공개 후 반영</p>
+      )}
+    </aside>
+  );
+}
 
 // ------------------------------------------------------------
 // 경기 카드
@@ -472,113 +532,117 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
   }, [votes.length]);
 
   const openTally = (side: 'A' | 'B') => votes.slice(0, opened).filter((v) => v === side).length;
+  const rankingHiddenMatchId = votes.length > 0 && opened < votes.length ? match.id : undefined;
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-8 py-6 lg:gap-10 2xl:gap-12">
-      {/* 라운드 + 집계 — 뒷줄 가독이 목표라 화면 요소 중 최대 크기 */}
-      <div className="flex w-full flex-col items-center gap-1">
-        <span className="font-display text-4xl text-(--orange) lg:text-5xl 2xl:text-6xl">
-          {match.round === 3 ? 'FINAL' : `ROUND ${match.round}-${match.id.split('-')[1]}`}
-        </span>
-        {/* 집계 양옆에 팀명+학교 (8/23 운영자 지시) — 같은 학교끼리 붙으면 숫자
-            색만으로는 어느 쪽이 누구인지 확인이 안 된다. 행을 화면 전폭으로 펴야
-            8xl 6자 팀명이 안 잘린다. 집계는 열린 칩만 센다 — 칩과 같은 시계 */}
-        <div className="flex w-full items-center gap-6 px-8 lg:gap-9 2xl:gap-12">
-          {(['A', 'B'] as const).map((side) => {
-            const team = teamAt(state, side === 'A' ? match.a : match.b);
-            return (
-              <div
-                key={side}
-                className={`flex min-w-0 flex-1 flex-col ${
-                  side === 'A' ? 'order-1 items-end text-right' : 'order-3 items-start text-left'
-                }`}
-              >
-                {/* 8/24 최종 — 크기는 양쪽 동일 고정 5xl ("유동 금지·적당한 크기",
-                    4xl "너무 작다"·6xl 은 20자 중 8자 잘림으로 기각). 20자처럼
-                    한 줄을 넘는 팀명만 두 줄로 흐른다 (크기 유동 아님) —
-                    line-clamp-2 가 상한 */}
-                <span
-                  className="line-clamp-2 text-2xl leading-tight font-extrabold lg:text-4xl 2xl:text-5xl"
-                  style={{ color: SIDE_COLORS[side] }}
+    <div className="grid flex-1 place-items-center gap-6 py-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-7 2xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="flex min-w-0 flex-col items-center justify-center gap-8 lg:gap-10 2xl:gap-12">
+        {/* 라운드 + 집계 — 뒷줄 가독이 목표라 화면 요소 중 최대 크기 */}
+        <div className="flex w-full flex-col items-center gap-1">
+          <span className="font-display text-4xl text-(--orange) lg:text-5xl 2xl:text-6xl">
+            {match.round === 3 ? 'FINAL' : `ROUND ${match.round}-${match.id.split('-')[1]}`}
+          </span>
+          {/* 집계 양옆에 팀명+학교 (8/23 운영자 지시) — 같은 학교끼리 붙으면 숫자
+              색만으로는 어느 쪽이 누구인지 확인이 안 된다. 행을 화면 전폭으로 펴야
+              8xl 6자 팀명이 안 잘린다. 집계는 열린 칩만 센다 — 칩과 같은 시계 */}
+          <div className="flex w-full items-center gap-6 px-2 lg:gap-9 2xl:gap-12">
+            {(['A', 'B'] as const).map((side) => {
+              const team = teamAt(state, side === 'A' ? match.a : match.b);
+              return (
+                <div
+                  key={side}
+                  className={`flex min-w-0 flex-1 flex-col ${
+                    side === 'A' ? 'order-1 items-end text-right' : 'order-3 items-start text-left'
+                  }`}
                 >
-                  {team?.team || '팀 미입력'}
-                </span>
-              </div>
-            );
-          })}
-          <div className="font-en order-2 flex items-center gap-7 text-7xl font-extrabold tabular-nums lg:text-8xl 2xl:text-9xl">
-            <span style={{ color: SIDE_COLORS.A }}>{openTally('A')}</span>
-            <span className="text-4xl text-white/25">:</span>
-            <span style={{ color: SIDE_COLORS.B }}>{openTally('B')}</span>
+                  {/* 8/24 최종 — 크기는 양쪽 동일 고정 5xl ("유동 금지·적당한 크기",
+                      4xl "너무 작다"·6xl 은 20자 중 8자 잘림으로 기각). 20자처럼
+                      한 줄을 넘는 팀명만 두 줄로 흐른다 (크기 유동 아님) —
+                      line-clamp-2 가 상한 */}
+                  <span
+                    className="line-clamp-2 text-2xl leading-tight font-extrabold lg:text-4xl 2xl:text-5xl"
+                    style={{ color: SIDE_COLORS[side] }}
+                  >
+                    {team?.team || '팀 미입력'}
+                  </span>
+                </div>
+              );
+            })}
+            <div className="font-en order-2 flex items-center gap-7 text-7xl font-extrabold tabular-nums lg:text-8xl 2xl:text-9xl">
+              <span style={{ color: SIDE_COLORS.A }}>{openTally('A')}</span>
+              <span className="text-4xl text-white/25">:</span>
+              <span style={{ color: SIDE_COLORS.B }}>{openTally('B')}</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex flex-wrap items-start justify-center gap-6 lg:gap-7 2xl:gap-8">
-        {/* 실물 카드 문법 (8/20): 뒷면(card-back-Q)이 깔리고 한 장씩 앞면으로.
-            앞면은 표받은 팀의 캐릭터 카드 — 테두리 진영색이 곧 개표 현황이다.
-            플립 시작 = 효과음, 플립 종료 = 집계·이름 오픈 (단일 시계 원칙) */}
-        {/* 카드 폭 = min(기준 폭, 화면에 표 수만큼 한 줄로 들어가는 폭) (8/24 —
-            1920 미만 창에서 5장째가 줄바꿈돼 내려가던 것 수정. 프로젝터 1920 은
-            기준 폭 그대로, 좁은 창에서만 자동 축소) */}
-        {votes.map((side, i) => (
-          <div
-            key={i}
-            className="flex flex-col items-center gap-3"
-            style={{ '--chipw': `min(21rem, max(9rem, calc((100vw - 6rem) / ${votes.length} - 2rem)))` } as CSSProperties}
-          >
-            {/* 심사위원 명의 — 카드 위 (8/23 운영자 지시), 플립이 끝난 뒤에만
-                (뒷면 상태에서 이름이 먼저 보이면 다음 표를 예고하는 꼴).
-                이름 없는 표(도입 전 데이터)는 자리만 유지 */}
-            <span
-              className={`truncate text-center text-xl font-extrabold transition-opacity duration-500 lg:text-2xl 2xl:text-3xl ${
-                i < opened && names[i] ? 'opacity-100' : 'opacity-0'
-              }`}
-              style={{ color: SIDE_COLORS[side], maxWidth: 'var(--chipw)' }}
-            >
-              {names[i] ?? ' '}
-            </span>
+        <div className="flex flex-wrap items-start justify-center gap-6 lg:gap-7 2xl:gap-8">
+          {/* 실물 카드 문법 (8/20): 뒷면(card-back-Q)이 깔리고 한 장씩 앞면으로.
+              앞면은 표받은 팀의 캐릭터 카드 — 테두리 진영색이 곧 개표 현황이다.
+              플립 시작 = 효과음, 플립 종료 = 집계·이름 오픈 (단일 시계 원칙) */}
+          {/* 카드 폭 = min(기준 폭, 화면에 표 수만큼 한 줄로 들어가는 폭) (8/24 —
+              1920 미만 창에서 5장째가 줄바꿈돼 내려가던 것 수정. 프로젝터 1920 은
+              기준 폭 그대로, 좁은 창에서만 자동 축소) */}
+          {votes.map((side, i) => (
             <div
-              className="chip-outer relative aspect-2/3"
-              style={{ animationDelay: `${i * 0.06}s`, width: 'var(--chipw)' }}
+              key={i}
+              className="flex flex-col items-center gap-3"
+              style={{ '--chipw': `min(18rem, max(8rem, calc((100vw - 25rem) / ${votes.length} - 1.8rem)))` } as CSSProperties}
             >
-              <div
-                className="chip-inner relative h-full w-full"
-                // 표 카드 플립 = 드럼 히트 (8/23 운영자 선곡 — 카드 놓기 폴리에서 교체.
-                // 추첨 구간은 무음 — #91)
-                onAnimationStart={(e) => e.animationName === 'chipFlip' && playDrum()}
-                onAnimationEnd={(e) => e.animationName === 'chipFlip' && setOpened((n) => Math.max(n, i + 1))}
-                style={{ animationDelay: `${chipDelayMs(i, votes.length, match.id === 'F') / 1000}s` }}
+              {/* 심사위원 명의 — 카드 위 (8/23 운영자 지시), 플립이 끝난 뒤에만
+                  (뒷면 상태에서 이름이 먼저 보이면 다음 표를 예고하는 꼴).
+                  이름 없는 표(도입 전 데이터)는 자리만 유지 */}
+              <span
+                className={`truncate text-center text-xl font-extrabold transition-opacity duration-500 lg:text-2xl 2xl:text-3xl ${
+                  i < opened && names[i] ? 'opacity-100' : 'opacity-0'
+                }`}
+                style={{ color: SIDE_COLORS[side], maxWidth: 'var(--chipw)' }}
               >
-                {/* 테두리·클리핑 래퍼 제거 (8/22 심야) — 에셋에 구운 곡률과 CSS
-                    곡률이 근본적으로 안 맞아서(앞면 5.6~5.8%, 뒷면 6.1% 실측)
-                    에셋을 원형 그대로 쓴다. 진영색은 카드 알파 모양을 따라가는
-                    drop-shadow 글로우가 담당 — 안쪽 얇은 겹 + 바깥 퍼짐 두 겹 */}
+                {names[i] ?? ' '}
+              </span>
+              <div
+                className="chip-outer relative aspect-2/3"
+                style={{ animationDelay: `${i * 0.06}s`, width: 'var(--chipw)' }}
+              >
                 <div
-                  className="chip-face absolute inset-0"
-                  style={{
-                    filter: `drop-shadow(0 0 3px ${SIDE_COLORS[side]}) drop-shadow(0 0 28px color-mix(in srgb, ${SIDE_COLORS[side]} 55%, transparent))`,
-                  }}
+                  className="chip-inner relative h-full w-full"
+                  // 표 카드 플립 = 드럼 히트 (8/23 운영자 선곡 — 카드 놓기 폴리에서 교체.
+                  // 추첨 구간은 무음 — #91)
+                  onAnimationStart={(e) => e.animationName === 'chipFlip' && playDrum()}
+                  onAnimationEnd={(e) => e.animationName === 'chipFlip' && setOpened((n) => Math.max(n, i + 1))}
+                  style={{ animationDelay: `${chipDelayMs(i, votes.length, match.id === 'F') / 1000}s` }}
                 >
-                  {chipCharacter(side) ? (
-                    <Image src={characterImageSrc(chipCharacter(side)!)} alt="" fill sizes="336px" className="object-cover" />
-                  ) : (
-                    <span
-                      className="grid h-full w-full place-items-center rounded-xl border-2 px-4 text-center text-3xl font-extrabold"
-                      style={{ color: SIDE_COLORS[side], borderColor: SIDE_COLORS[side] }}
-                    >
-                      {chipLabel(side)}
-                    </span>
-                  )}
-                </div>
-                <div className="chip-face chip-back absolute inset-0">
-                  <Image src="/card-back-Q-ver3.png" alt="" fill sizes="336px" className="object-cover" />
+                  {/* 테두리·클리핑 래퍼 제거 (8/22 심야) — 에셋에 구운 곡률과 CSS
+                      곡률이 근본적으로 안 맞아서(앞면 5.6~5.8%, 뒷면 6.1% 실측)
+                      에셋을 원형 그대로 쓴다. 진영색은 카드 알파 모양을 따라가는
+                      drop-shadow 글로우가 담당 — 안쪽 얇은 겹 + 바깥 퍼짐 두 겹 */}
+                  <div
+                    className="chip-face absolute inset-0"
+                    style={{
+                      filter: `drop-shadow(0 0 3px ${SIDE_COLORS[side]}) drop-shadow(0 0 28px color-mix(in srgb, ${SIDE_COLORS[side]} 55%, transparent))`,
+                    }}
+                  >
+                    {chipCharacter(side) ? (
+                      <Image src={characterImageSrc(chipCharacter(side)!)} alt="" fill sizes="288px" className="object-cover" />
+                    ) : (
+                      <span
+                        className="grid h-full w-full place-items-center rounded-xl border-2 px-4 text-center text-3xl font-extrabold"
+                        style={{ color: SIDE_COLORS[side], borderColor: SIDE_COLORS[side] }}
+                      >
+                        {chipLabel(side)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="chip-face chip-back absolute inset-0">
+                    <Image src="/card-back-Q-ver3.png" alt="" fill sizes="288px" className="object-cover" />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
+      <LiveRankingPanel state={state} round={match.round} hiddenMatchId={rankingHiddenMatchId} />
     </div>
   );
 }
@@ -975,48 +1039,6 @@ function ChampionTakeover({ state, final }: { state: PublicState; final: Match }
         <div className="champ-flash absolute inset-0" aria-hidden />
       </div>
     </div>
-  );
-}
-
-/**
- * 소리 배지 (8/31) — 자동재생 정책에 막혀 컨텍스트가 suspended 인 동안에만 뜬다.
- * 무대 화면에서 문구는 전부 뺐지만(§6.1) 이건 "지금 소리가 안 난다"는 사실을
- * 시작 전에 알려주는 유일한 신호다 — 클릭 한 번이 곧 제스처라 배지가 스스로 사라진다.
- * scripts/stage-launch.bat 로 연 무대에서는 처음부터 running 이라 나타나지 않는다.
- */
-function SfxGate() {
-  const [blocked, setBlocked] = useState(false);
-  const [unlocking, setUnlocking] = useState(false);
-  const unlockingRef = useRef(false);
-
-  useEffect(() => {
-    const tick = () => setBlocked(sfxBlocked());
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const handleUnlock = useCallback(() => {
-    if (unlockingRef.current) return;
-    unlockingRef.current = true;
-    setUnlocking(true);
-    void unlockSfx().then(() => {
-      setBlocked(sfxBlocked());
-      setUnlocking(false);
-      unlockingRef.current = false;
-    });
-  }, []);
-
-  if (!blocked) return null;
-  return (
-    <button
-      type="button"
-      onPointerDown={handleUnlock}
-      onClick={handleUnlock}
-      className="fixed bottom-4 right-4 z-50 rounded-full border border-white/15 bg-black/55 px-4 py-2 text-sm font-bold text-white/70 backdrop-blur transition-colors hover:text-white"
-    >
-      {unlocking ? '소리 켜는 중' : '소리 꺼짐 — 클릭해서 켜기'}
-    </button>
   );
 }
 
@@ -1692,7 +1714,6 @@ export default function ViewerPage() {
       )}
       {champion && !finalSeq && !countdown && <ChampionTakeover state={state} final={final} />}
 
-      <SfxGate />
     </main>
   );
 }
