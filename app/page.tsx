@@ -986,6 +986,8 @@ function ChampionTakeover({ state, final }: { state: PublicState; final: Match }
  */
 function SfxGate() {
   const [blocked, setBlocked] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+  const unlockingRef = useRef(false);
 
   useEffect(() => {
     const tick = () => setBlocked(sfxBlocked());
@@ -994,14 +996,26 @@ function SfxGate() {
     return () => clearInterval(timer);
   }, []);
 
+  const handleUnlock = useCallback(() => {
+    if (unlockingRef.current) return;
+    unlockingRef.current = true;
+    setUnlocking(true);
+    void unlockSfx().then(() => {
+      setBlocked(sfxBlocked());
+      setUnlocking(false);
+      unlockingRef.current = false;
+    });
+  }, []);
+
   if (!blocked) return null;
   return (
     <button
       type="button"
-      onClick={() => unlockSfx()}
+      onPointerDown={handleUnlock}
+      onClick={handleUnlock}
       className="fixed bottom-4 right-4 z-50 rounded-full border border-white/15 bg-black/55 px-4 py-2 text-sm font-bold text-white/70 backdrop-blur transition-colors hover:text-white"
     >
-      소리 꺼짐 — 클릭해서 켜기
+      {unlocking ? '소리 켜는 중' : '소리 꺼짐 — 클릭해서 켜기'}
     </button>
   );
 }

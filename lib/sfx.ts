@@ -151,21 +151,23 @@ export function armSfx(): (() => void) | undefined {
 }
 
 /**
- * 소리가 막혀 있는지 — 제스처 전이라 컨텍스트가 suspended 이거나 샘플 로드가 실패한 상태.
- * 스크린의 소리 배지가 이 값으로 자기를 보여줄지 정한다 (armSfx 전에는 false).
+ * 브라우저 자동재생 정책에 막혀 있는지.
+ *
+ * 샘플 로드 실패는 클릭으로 풀 수 있는 문제가 아니므로 배지 조건에 섞지 않는다.
+ * 배지는 "사용자 제스처가 필요하다"는 신호로만 쓴다.
  */
 export function sfxBlocked(): boolean {
   if (!ctx) return false;
-  if (ctx.state !== 'running') return true;
-  return !hitBuffer && !drumBuffer && loadAttempts > 0 && !loading;
+  return ctx.state !== 'running';
 }
 
 /** 배지 클릭 등 명시적 언락 — 클릭 자체가 제스처라 여기서 resume 이 통한다. */
-export function unlockSfx(): void {
+export async function unlockSfx(): Promise<boolean> {
   const c = context();
-  if (!c) return;
-  void wake(c);
+  if (!c) return false;
+  await wake(c);
   void load(c);
+  return c.state === 'running';
 }
 
 /**
