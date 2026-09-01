@@ -21,6 +21,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 type PublicState = { teams: Team[]; matches: Match[]; rev: number };
 type RankingSequence = { round: Round; changedMatchId: string; nonce: number };
+const RANKING_TAKEOVER_MS = 6500;
 
 // ------------------------------------------------------------
 // 데이터 헬퍼
@@ -530,7 +531,15 @@ function FocusLive({ state, match }: { state: PublicState; match: Match }) {
  * 원거리 가독을 위해 다시 뺐다 — 큰 행사장 뒷줄까지 읽혀야 해서 남은 두 요소를
  * 최대 크기로 키운다. 승자 강조는 여전히 [발표]가 여는 결과 화면의 몫.
  */
-function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
+function FreezeReveal({
+  state,
+  match,
+  onRevealComplete,
+}: {
+  state: PublicState;
+  match: Match;
+  onRevealComplete?: (match: Match) => void;
+}) {
   const votes = match.votes ?? [];
   const names = match.voteNames ?? [];
   const chipCharacter = (side: 'A' | 'B') => teamAt(state, side === 'A' ? match.a : match.b)?.character ?? null;
@@ -539,6 +548,12 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
   // 오픈된 칩 수 — 집계·이름 표기가 따라간다. 시계는 chipFlip 의 animationend 하나
   // (JS 타이머로 CSS 타이밍을 수치 복제하면 두 시계가 되어 어긋난 전례 — PR #24)
   const [opened, setOpened] = useState(0);
+  const completedRef = useRef(false);
+  const matchRef = useRef(match);
+
+  useEffect(() => {
+    matchRef.current = match;
+  }, [match]);
 
   // 도입 무음 (8/23 운영자 — 부채꼴 폴리도 제거: 첫 플립 드럼과 겹친다.
   // mixkit 노티는 #72→#73→#75→#77 로 제거됨. 이 화면 소리는 플립 드럼뿐)
@@ -550,9 +565,16 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
     return () => clearTimeout(timer);
   }, [votes.length]);
 
+  useEffect(() => {
+    if (!onRevealComplete || completedRef.current || votes.length === 0 || opened < votes.length) return;
+    completedRef.current = true;
+    const timer = setTimeout(() => onRevealComplete(matchRef.current), 900);
+    return () => clearTimeout(timer);
+  }, [match.id, onRevealComplete, opened, votes.length]);
+
   const openTally = (side: 'A' | 'B') => votes.slice(0, opened).filter((v) => v === side).length;
   return (
-    <div className="grid flex-1 place-items-center gap-6 py-6">
+    <div className="grid flex-1 place-items-center gap-6 overflow-hidden py-6">
       <div className="flex min-w-0 flex-col items-center justify-center gap-8 lg:gap-10 2xl:gap-12">
         {/* 라운드 + 집계 — 뒷줄 가독이 목표라 화면 요소 중 최대 크기 */}
         <div className="flex w-full flex-col items-center gap-1">
@@ -1077,6 +1099,27 @@ export default function ViewerPage() {
   const revRef = useRef(0);
   const prevAnnouncedRef = useRef<Record<string, boolean> | null>(null); // null = 첫 스냅샷 전
   const prevDrawnRef = useRef<boolean | null>(null);
+  const rankingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closedRevealRef = useRef<Set<string>>(new Set());
+  const [closedRevealIds, setClosedRevealIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  const showRankingSequence = useCallback((match: Match) => {
+    if (match.id === 'F' || closedRevealRef.current.has(match.id)) return;
+    const nonce = Date.now();
+    setRankingSeq({ round: match.round, changedMatchId: match.id, nonce });
+    if (rankingTimerRef.current) clearTimeout(rankingTimerRef.current);
+    rankingTimerRef.current = setTimeout(() => {
+      closedRevealRef.current.add(match.id);
+      setRankingSeq((current) => (current?.nonce === nonce ? null : current));
+      setClosedRevealIds(new Set(closedRevealRef.current));
+    }, RANKING_TAKEOVER_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (rankingTimerRef.current) clearTimeout(rankingTimerRef.current);
+    };
+  }, []);
 
   const poll = useCallback(async () => {
     try {
@@ -1109,14 +1152,10 @@ export default function ViewerPage() {
           setCountdown(true);
         }
         const rankingJust = next.matches.find(
-          (m) => m.id !== 'F' && isAnnounced(m) && prevA[m.id] === false,
+          (m) => m.id !== 'F' && isAnnounced(m) && prevA[m.id] === false && !closedRevealRef.current.has(m.id),
         );
         if (rankingJust) {
-          const nonce = Date.now();
-          setRankingSeq({ round: rankingJust.round, changedMatchId: rankingJust.id, nonce });
-          setTimeout(() => {
-            setRankingSeq((current) => (current?.nonce === nonce ? null : current));
-          }, 6500);
+          showRankingSequence(rankingJust);
         }
       }
       prevAnnouncedRef.current = Object.fromEntries(next.matches.map((m) => [m.id, isAnnounced(m)]));
@@ -1133,7 +1172,7 @@ export default function ViewerPage() {
     } catch {
       /* 마지막 정상 스냅샷 유지 */
     }
-  }, []);
+  }, [showRankingSequence]);
 
   useEffect(() => {
     // 1.5초 폴링 (8/22 저녁, 3초에서 단축): 스크린이 프로젝터 전용이라 클라이언트가
@@ -1165,7 +1204,10 @@ export default function ViewerPage() {
   const finalistPreview = topTeamsForRound(state, 2, 2);
   // 정지 화면은 상태 파생 — done && 미발표(표 있음)면 새로고침해도 그대로 유지된다.
   // 결선은 해당 없음: 공개 즉시 발표 간주(결선 특례)라 done 이면 항상 announced
-  const frozen = state.matches.find((m) => m.status === 'done' && !isAnnounced(m) && m.id !== 'F') ?? null;
+  const frozen =
+    live === null
+      ? state.matches.find((m) => m.status === 'done' && !isAnnounced(m) && m.id !== 'F' && !closedRevealIds.has(m.id)) ?? null
+      : null;
   const champion = isAnnounced(final);
   // 추첨 전에는 준결승 두 쌍 대신 중앙 집결 박스 하나 (8/22 저녁 — R1 승자가 모이는 곳)
   const semisDrawn = [semi1, semi2].every((m) => m.a !== null && m.b !== null);
@@ -1609,18 +1651,18 @@ export default function ViewerPage() {
 
       {/* 헤더·푸터·안내 문구는 전부 제거 (8/22 운영자: 무대에 필요없는 멘트 삭제) —
           화면은 연출과 대진표만 남긴다. 본문 우선순위:
-          표 정지 화면 > 결선 표 연출 > 추첨 시퀀스 > live 대결 포커스 > 대진표 (§6.1) */}
-      {frozen ? (
-        <FreezeReveal state={state} match={frozen} />
-      ) : finalSeq ? (
-        <FreezeReveal state={state} match={finalSeq} />
-      ) : rankingSeq ? (
+          순위 클로즈업 > 표 정지 화면 > 결선 표 연출 > 추첨 시퀀스 > live 대결 포커스 > 대진표 (§6.1) */}
+      {rankingSeq ? (
         <RankingTakeover
           key={rankingSeq.nonce}
           state={state}
           round={rankingSeq.round}
           changedMatchId={rankingSeq.changedMatchId}
         />
+      ) : frozen ? (
+        <FreezeReveal key={frozen.id} state={state} match={frozen} onRevealComplete={showRankingSequence} />
+      ) : finalSeq ? (
+        <FreezeReveal key={finalSeq.id} state={state} match={finalSeq} />
       ) : drawSeq ? (
         <DrawSequence state={state} semis={drawSeq} />
       ) : live ? (

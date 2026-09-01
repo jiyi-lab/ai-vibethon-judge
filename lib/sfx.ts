@@ -50,7 +50,8 @@ let hitBuffer: AudioBuffer | null = null;
 let drumBuffer: AudioBuffer | null = null;
 let hitLoading: Promise<void> | null = null;
 let drumLoading: Promise<void> | null = null;
-let loadAttempts = 0;
+let hitLoadAttempts = 0;
+let drumLoadAttempts = 0;
 let resuming: Promise<void> | null = null;
 
 const now = () => (typeof performance === 'undefined' ? Date.now() : performance.now());
@@ -74,12 +75,12 @@ async function decodeSample(c: AudioContext, url: string): Promise<AudioBuffer> 
 function loadHit(c: AudioContext): Promise<void> {
   if (hitBuffer) return Promise.resolve();
   if (hitLoading) return hitLoading;
-  if (loadAttempts >= MAX_LOAD_ATTEMPTS) return Promise.resolve();
-  loadAttempts += 1;
+  if (hitLoadAttempts >= MAX_LOAD_ATTEMPTS) return Promise.resolve();
+  hitLoadAttempts += 1;
   hitLoading = (async () => {
     try {
       hitBuffer = await decodeSample(c, HIT_SOURCE);
-      loadAttempts = 0; // 성공했으면 재시도 카운터를 되돌린다
+      hitLoadAttempts = 0; // 성공했으면 재시도 카운터를 되돌린다
     } catch {
       /* 다음 재생 요청이 다시 시도한다 */
     } finally {
@@ -92,12 +93,12 @@ function loadHit(c: AudioContext): Promise<void> {
 function loadDrum(c: AudioContext): Promise<void> {
   if (drumBuffer) return Promise.resolve();
   if (drumLoading) return drumLoading;
-  if (loadAttempts >= MAX_LOAD_ATTEMPTS) return Promise.resolve();
-  loadAttempts += 1;
+  if (drumLoadAttempts >= MAX_LOAD_ATTEMPTS) return Promise.resolve();
+  drumLoadAttempts += 1;
   drumLoading = (async () => {
     try {
       drumBuffer = await decodeSample(c, DRUM_SOURCE);
-      loadAttempts = 0; // 성공했으면 재시도 카운터를 되돌린다
+      drumLoadAttempts = 0; // 성공했으면 재시도 카운터를 되돌린다
     } catch {
       /* 다음 재생 요청이 다시 시도한다 */
     } finally {
@@ -137,6 +138,18 @@ function prime(c: AudioContext): void {
     osc.stop(c.currentTime + 0.03);
   } catch {
     /* 프라임 실패도 화면을 막으면 안 된다 */
+  }
+}
+
+function playMediaFallback(url: string, volume: number): void {
+  if (typeof Audio === 'undefined') return;
+  try {
+    const audio = new Audio(url);
+    audio.preload = 'auto';
+    audio.volume = volume;
+    void audio.play().catch(() => {});
+  } catch {
+    /* HTMLAudio 폴백도 실패하면 조용히 넘어간다 */
   }
 }
 
@@ -258,6 +271,7 @@ function playImpact(c: AudioContext, volume = 1): void {
 export function playVersus(): void {
   schedule((c) => {
     if (!hitBuffer) {
+      playMediaFallback(HIT_SOURCE, 0.8);
       playImpact(c, 0.75);
       return;
     }
@@ -294,6 +308,7 @@ export function playVersus(): void {
 export function playDrum(): void {
   schedule((c) => {
     if (!drumBuffer) {
+      playMediaFallback(DRUM_SOURCE, 0.9);
       playImpact(c, 0.45);
       return;
     }
