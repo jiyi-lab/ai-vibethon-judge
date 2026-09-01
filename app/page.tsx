@@ -89,7 +89,7 @@ function RankingTakeover({
       <div className="ranking-panel w-full max-w-5xl rounded-3xl border border-white/10 bg-black/45 p-8 backdrop-blur lg:p-10 2xl:max-w-6xl 2xl:p-12">
         <div className="flex items-end justify-between gap-5">
           <div>
-            <h2 className="mt-1 text-6xl font-extrabold text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h2>
+            <h2 className="font-display mt-1 text-6xl text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h2>
           </div>
         </div>
         <div className="mt-8 grid gap-3 lg:grid-cols-2 2xl:gap-4">
@@ -138,7 +138,7 @@ function LiveRankingStage({ state, round }: { state: PublicState; round: Round }
       <div className="w-full max-w-6xl">
         <div className="mb-7 flex items-end justify-between gap-5">
           <div>
-            <h1 className="mt-1 text-6xl font-extrabold text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h1>
+            <h1 className="font-display mt-1 text-6xl text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h1>
           </div>
         </div>
         <div className="grid gap-3 lg:grid-cols-2 2xl:gap-4">
