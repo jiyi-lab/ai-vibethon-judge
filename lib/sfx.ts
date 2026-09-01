@@ -113,16 +113,24 @@ function load(c: AudioContext): Promise<void> {
   return Promise.all([loadHit(c), loadDrum(c)]).then(() => undefined);
 }
 
-/** suspended 컨텍스트 깨우기 — 요청이 겹쳐도 resume 은 한 번만 건다. */
+/**
+ * suspended 컨텍스트 깨우기 — 요청이 겹쳐도 resume 은 한 번만 건다.
+ *
+ * 반드시 정착하는 프라미스를 돌려준다: resume() 이 거부도 이행도 하지 않고 매달려
+ * 있는 브라우저가 있어서, 이걸 await 하는 호출부(버튼 핸들러 등)가 통째로 멈춘 전례가
+ * 있다 (2026-09-01). 소리 때문에 화면이 멈추는 일은 없어야 한다.
+ */
+const RESUME_TIMEOUT_MS = 400;
+
 function wake(c: AudioContext): Promise<void> {
   if (c.state === 'running') return Promise.resolve();
   if (!resuming) {
-    resuming = c
-      .resume()
-      .catch(() => {}) // 제스처 전이면 거부된다 — 다음 요청에서 다시 시도
-      .finally(() => {
-        resuming = null;
-      });
+    resuming = Promise.race([
+      c.resume().catch(() => {}), // 제스처 전이면 거부된다 — 다음 요청에서 다시 시도
+      new Promise<void>((resolve) => setTimeout(resolve, RESUME_TIMEOUT_MS)),
+    ]).finally(() => {
+      resuming = null;
+    });
   }
   return resuming;
 }

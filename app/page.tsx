@@ -163,8 +163,13 @@ function FinalRankingPrompt({ onShow }: { onShow: () => void }) {
         <Wordmark className="mx-auto mb-6 h-4 w-auto text-[var(--orange)]" />
         <h1 className="font-display text-6xl text-(--orange) lg:text-8xl 2xl:text-9xl">FINAL RESULT</h1>
         <button
-          onClick={async () => {
-            await unlockSfx();
+          onClick={() => {
+            // 소리는 곁다리다 — await 로 묶으면 안 된다. 실제 Chrome 은 AudioContext 가
+            // suspended 로 시작하는데 resume() 프라미스가 정착하지 않는 경우가 있고,
+            // 그러면 뒤의 onShow() 가 영영 실행되지 않아 버튼이 죽은 것처럼 보인다
+            // (2026-09-01 실기기 QA 에서 발견 — 인앱 브라우저는 컨텍스트가 처음부터
+            // running 이라 이 경로를 타지 않아 못 잡았다).
+            void unlockSfx();
             playVersus();
             onShow();
           }}
@@ -200,8 +205,11 @@ function ReadyPrompt({ match, onStart }: { match: Match; onStart: () => void }) 
         <span className="font-display text-3xl text-(--orange) lg:text-4xl 2xl:text-5xl">{label}</span>
         <h1 className="font-display mt-2 text-6xl text-white lg:text-8xl 2xl:text-9xl">ARE YOU READY?</h1>
         <button
-          onClick={async () => {
-            await unlockSfx();
+          onClick={() => {
+            // await 금지 — 위 FinalRankingPrompt 와 같은 이유. 언락은 걸어만 두고
+            // 화면은 즉시 넘긴다. 곧이어 마운트되는 FocusLive 의 칼 스윙은
+            // schedule() 의 지각 허용치 안에서 따라온다.
+            void unlockSfx();
             onStart();
           }}
           className="mt-10 rounded-2xl border border-[var(--orange)]/70 bg-[var(--orange)] px-14 py-5 text-2xl font-extrabold text-white shadow-[0_0_38px_rgba(236,108,1,0.28)] transition-transform hover:scale-[1.03] active:scale-[0.99] 2xl:px-16 2xl:py-6 2xl:text-3xl"
