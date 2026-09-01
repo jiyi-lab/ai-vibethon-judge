@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { CharacterArt, TRACK_COLORS, Wordmark, characterImageSrc } from '@/components/ui';
-import { armSfx, playDrum, playVersus, sfxBlocked, unlockSfx } from '@/lib/sfx';
+import { armSfx, playDrum, playVersus, unlockSfx } from '@/lib/sfx';
 import { isAnnounced, roundRankings, winningTeamId, type Match, type Round, type Team } from '@/lib/tournament';
 import type { CSSProperties, ReactNode } from 'react';
 
@@ -171,6 +171,42 @@ function FinalRankingPrompt({ onShow }: { onShow: () => void }) {
           className="mt-10 rounded-2xl border border-[var(--orange)]/70 bg-[var(--orange)] px-14 py-5 text-2xl font-extrabold text-white shadow-[0_0_38px_rgba(236,108,1,0.28)] transition-transform hover:scale-[1.03] active:scale-[0.99] 2xl:px-16 2xl:py-6 2xl:text-3xl"
         >
           최종 결과 보기
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 대결 직전 "ARE YOU READY?" (2026-09-01 운영자 지시 — "Are you ready? 해 놓고
+ * 버튼 누르면 1팀 vs 2팀 이렇게 나오게").
+ *
+ * 운영 콘솔이 경기를 시작해도 스크린은 곧장 VS 로 가지 않고 여기서 한 박자 쉰다.
+ * MC 가 "준비되셨나요?" 하고 넘기는 큐와 박자가 맞는다.
+ *
+ * 팀명은 일부러 감춘다 — 누가 붙는지는 버튼을 누른 뒤 VS 화면이 공개한다.
+ *
+ * 이 버튼에는 부수 효과가 하나 더 있다: 클릭 자체가 브라우저 자동재생 정책을 푸는
+ * 제스처다. 소리 배지를 없앤 뒤로(운영자 요청) 소리가 열리는 자리가 여기다 —
+ * 그래서 unlockSfx() 를 먼저 기다린 뒤 넘어간다. 그래야 곧이어 마운트되는
+ * FocusLive 의 칼 스윙이 제때 난다.
+ */
+function ReadyPrompt({ match, onStart }: { match: Match; onStart: () => void }) {
+  const label = match.round === 3 ? 'FINAL' : `ROUND ${match.round}-${match.id.split('-')[1]}`;
+  return (
+    <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
+      <div className="ranking-aura absolute inset-0" aria-hidden />
+      <div className="relative text-center">
+        <span className="font-display text-3xl text-(--orange) lg:text-4xl 2xl:text-5xl">{label}</span>
+        <h1 className="font-display mt-2 text-6xl text-white lg:text-8xl 2xl:text-9xl">ARE YOU READY?</h1>
+        <button
+          onClick={async () => {
+            await unlockSfx();
+            onStart();
+          }}
+          className="mt-10 rounded-2xl border border-[var(--orange)]/70 bg-[var(--orange)] px-14 py-5 text-2xl font-extrabold text-white shadow-[0_0_38px_rgba(236,108,1,0.28)] transition-transform hover:scale-[1.03] active:scale-[0.99] 2xl:px-16 2xl:py-6 2xl:text-3xl"
+        >
+          대결 시작
         </button>
       </div>
     </section>
@@ -1120,47 +1156,6 @@ function ChampionTakeover({ state, final }: { state: PublicState; final: Match }
   );
 }
 
-/**
- * 소리 배지 — 자동재생 정책에 막혀 있는 동안에만 뜬다.
- *
- * 브라우저는 **그 문서에서 클릭·키 입력이 한 번이라도 있기 전까지** AudioContext 를
- * suspended 로 둔다. 그런데 스크린은 프로젝터 전용이라 운영자가 클릭하는 창은 언제나
- * 운영 콘솔 쪽이고 스크린 창은 아무도 안 건드린다 — VS 등장도 표 플립도 조용히 무음이
- * 된다. 새로고침할 때마다 다시 잠기므로 개발 중에는 더 자주 겪는다.
- * (2026-08-31 도입 → 랭킹 개편 때 유실 → 2026-09-01 복구. 없앤 동안 정확히 이 증상이 났다)
- *
- * 그래서 "지금 소리가 막혀 있다"를 띄우는 것 자체가 기능이다. 무대에서 문구를 전부
- * 뺐지만(§6.1) 이 배지는 막혀 있는 동안에만 보이고 누르면 사라진다. 누른 김에 드럼을
- * 한 번 울린다 — 조용히 성공하면 성공했는지 알 방법이 없다.
- *
- * scripts/stage-launch.bat 로 연 무대는 자동재생 허용 플래그가 있어 처음부터 안 뜬다.
- */
-function SfxGate() {
-  const [blocked, setBlocked] = useState(false);
-
-  useEffect(() => {
-    const tick = () => setBlocked(sfxBlocked());
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (!blocked) return null;
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        const ok = await unlockSfx();
-        if (ok) playDrum(); // 살아난 걸 귀로 확인시켜 준다
-        setBlocked(sfxBlocked());
-      }}
-      className="fixed bottom-5 right-5 z-50 rounded-full border border-(--orange)/70 bg-black/75 px-5 py-3 text-base font-extrabold text-white/90 backdrop-blur transition-transform hover:scale-[1.03] active:scale-[0.99]"
-    >
-      🔇 소리 꺼짐 — 눌러서 켜기
-    </button>
-  );
-}
-
 // ------------------------------------------------------------
 // 메인
 // ------------------------------------------------------------
@@ -1176,6 +1171,10 @@ export default function ViewerPage() {
   // react-hooks/set-state-in-effect 에도 걸린다. SSR 에는 localStorage 가 없으니 가드한다.
   // 하이드레이션 불일치는 없다: 첫 폴링 스냅샷이 오기 전(state === null)에는 로딩 화면만
   // 그리므로 이 값이 출력에 쓰이지 않는다.
+  // "ARE YOU READY?" 를 이미 넘긴 경기 id. 메모리에만 둔다 — 새로고침하면 다시 뜨는데,
+  // 그게 오히려 안전하다: 새로고침한 창은 자동재생 정책 때문에 소리도 함께 잠겨 있어서
+  // 어차피 클릭 한 번이 필요하다. 이 버튼이 그 클릭을 겸한다.
+  const [readyShownFor, setReadyShownFor] = useState<string | null>(null);
   const [localFinalRankingShown, setLocalFinalRankingShown] = useState(
     () => typeof window !== 'undefined' && localStorage.getItem(FINAL_RANKING_STORAGE_KEY) === '1',
   );
@@ -1741,7 +1740,11 @@ export default function ViewerPage() {
       ) : drawSeq ? (
         <DrawSequence state={state} semis={drawSeq} />
       ) : live ? (
-        <FocusLive state={state} match={live} />
+        readyShownFor === live.id ? (
+          <FocusLive state={state} match={live} />
+        ) : (
+          <ReadyPrompt match={live} onStart={() => setReadyShownFor(live.id)} />
+        )
       ) : allGroupResultsDone ? (
         <FinalRankingPrompt
           onShow={() => {
@@ -1770,8 +1773,6 @@ export default function ViewerPage() {
         />
       )}
       {!finalRankingVisible && champion && !finalSeq && !countdown && <ChampionTakeover state={state} final={final} />}
-
-      <SfxGate />
     </main>
   );
 }

@@ -200,9 +200,16 @@ export function armSfx(): (() => void) | undefined {
   };
   document.addEventListener('visibilitychange', onVisible);
 
+  // 주기적 재시도 — 화면에 "소리가 막혔다"고 알려주는 배지를 뺐으므로(2026-09-01 운영자
+  // 요청) 스스로 복구되어야 한다. 한 번 열린 컨텍스트가 오디오 장치 변경·절전 등으로
+  // suspended 로 떨어져도 다음 틱에 되살아난다. running 이면 wake() 가 즉시 반환하므로
+  // 사실상 공짜다. 제스처 전이라면 resume 이 거부되고 조용히 넘어간다.
+  const retry = setInterval(() => void wake(c), 2000);
+
   return () => {
     for (const type of events) removeEventListener(type, unlock, { capture: true });
     document.removeEventListener('visibilitychange', onVisible);
+    clearInterval(retry);
   };
 }
 
