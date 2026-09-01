@@ -16,11 +16,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import Image from 'next/image';
 import { CharacterArt, TRACK_COLORS, Wordmark, characterImageSrc } from '@/components/ui';
 import { armSfx, playDrum, playVersus } from '@/lib/sfx';
-import { isAnnounced, roundRankings, topTeamsForRound, winningTeamId, type Match, type Round, type Team } from '@/lib/tournament';
+import { isAnnounced, roundRankings, winningTeamId, type Match, type Round, type Team } from '@/lib/tournament';
 import type { CSSProperties, ReactNode } from 'react';
 
 type PublicState = { teams: Team[]; matches: Match[]; rev: number };
 type RankingSequence = { round: Round; changedMatchId: string; nonce: number };
+type VisibleRankingEntry = { teamIndex: number; score: number | null; order: number; matchId: string };
 const RANKING_TAKEOVER_MS = 6500;
 
 // ------------------------------------------------------------
@@ -38,17 +39,36 @@ function teamName(state: PublicState, index: number | null): string {
 
 const byId = (state: PublicState, id: string) => state.matches.find((m) => m.id === id)!;
 
-function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: string) {
-  return state.matches
-    .filter((match) => match.round === round && match.id !== hiddenMatchId && match.status === 'done' && match.scoreSummary)
-    .flatMap((match) =>
-      (['A', 'B'] as const).flatMap((side) => {
+function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: string): VisibleRankingEntry[] {
+  const entries = state.matches
+    .filter((match) => match.round === round)
+    .flatMap((match, matchOrder) =>
+      (['A', 'B'] as const).flatMap((side, sideOrder) => {
         const teamIndex = side === 'A' ? match.a : match.b;
-        const score = match.scoreSummary?.[side];
-        return teamIndex === null || score === undefined ? [] : [{ teamIndex, score }];
+        if (teamIndex === null) return [];
+        const score = match.id === hiddenMatchId ? undefined : match.scoreSummary?.[side];
+        return [{ teamIndex, score: score ?? null, order: matchOrder * 2 + sideOrder, matchId: match.id }];
       }),
-    )
-    .sort((a, b) => b.score - a.score || a.teamIndex - b.teamIndex);
+    );
+
+  return entries.sort((a, b) => {
+    if (a.score !== null && b.score !== null) return b.score - a.score || a.teamIndex - b.teamIndex;
+    if (a.score !== null) return -1;
+    if (b.score !== null) return 1;
+    return a.order - b.order;
+  });
+}
+
+function activeRankingRound(state: PublicState): Round {
+  const live = state.matches.find((match) => match.status === 'live');
+  if (live) return live.round;
+  const frozen = state.matches.find((match) => match.status === 'done' && !isAnnounced(match) && match.id !== 'F');
+  if (frozen) return frozen.round;
+  const final = byId(state, 'F');
+  if (final.a !== null && final.b !== null) return 3;
+  const semis = state.matches.filter((match) => match.round === 2);
+  if (semis.some((match) => match.a !== null || match.b !== null || match.status !== 'ready')) return 2;
+  return 1;
 }
 
 function RankingTakeover({
@@ -100,9 +120,10 @@ function RankingTakeover({
               >
                 <span className="font-en w-14 text-4xl font-extrabold text-white/35 2xl:text-5xl">{i + 1}</span>
                 <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
-                <span className="line-clamp-1 min-w-0 flex-1 text-3xl font-extrabold text-white 2xl:text-4xl">
-                  {teamName(state, entry.teamIndex)}
-                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="line-clamp-1 text-3xl font-extrabold text-white 2xl:text-4xl">{teamName(state, entry.teamIndex)}</span>
+                  {entry.score === null && <p className="mt-1 text-sm font-extrabold text-white/30 2xl:text-base">집계 대기</p>}
+                </div>
               </div>
             ))
           ) : (
@@ -110,6 +131,47 @@ function RankingTakeover({
               집계 대기
             </div>
           )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LiveRankingStage({ state, round }: { state: PublicState; round: Round }) {
+  const ranking = visibleRoundRankings(state, round);
+  const title = round === 1 ? 'ROUND 1 실시간 순위' : round === 2 ? 'ROUND 2 실시간 순위' : 'FINAL 순위';
+  const scoredCount = ranking.filter((entry) => entry.score !== null).length;
+
+  return (
+    <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
+      <div className="ranking-aura absolute inset-0" aria-hidden />
+      <div className="w-full max-w-6xl">
+        <div className="mb-7 flex items-end justify-between gap-5">
+          <div>
+            <p className="font-display text-xl text-white/30 2xl:text-2xl">LIVE RANKING</p>
+            <h1 className="font-display mt-1 text-6xl text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h1>
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-lg font-extrabold text-white/45">
+            점수 비공개 · {scoredCount}/{ranking.length} 집계
+          </span>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2 2xl:gap-4">
+          {ranking.map((entry, i) => (
+            <div
+              key={entry.teamIndex}
+              className={`ranking-row flex items-center gap-5 rounded-2xl border px-5 py-4 ${
+                entry.score === null ? 'border-white/6 bg-white/[0.02] opacity-55' : 'border-white/10 bg-white/[0.045]'
+              }`}
+              style={{ animationDelay: `${0.05 + i * 0.05}s` }}
+            >
+              <span className="font-en w-14 text-4xl font-extrabold text-white/35 2xl:text-5xl">{i + 1}</span>
+              <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
+              <div className="min-w-0 flex-1">
+                <span className="line-clamp-1 text-3xl font-extrabold text-white 2xl:text-4xl">{teamName(state, entry.teamIndex)}</span>
+                {entry.score === null && <p className="mt-1 text-sm font-extrabold text-white/30 2xl:text-base">아직 평가 전</p>}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -1199,9 +1261,6 @@ export default function ViewerPage() {
 
   const live = state.matches.find((m) => m.status === 'live') ?? null;
   const final = byId(state, 'F');
-  const semi1 = byId(state, 'R2-1');
-  const semi2 = byId(state, 'R2-2');
-  const finalistPreview = topTeamsForRound(state, 2, 2);
   // 정지 화면은 상태 파생 — done && 미발표(표 있음)면 새로고침해도 그대로 유지된다.
   // 결선은 해당 없음: 공개 즉시 발표 간주(결선 특례)라 done 이면 항상 announced
   const frozen =
@@ -1209,9 +1268,6 @@ export default function ViewerPage() {
       ? state.matches.find((m) => m.status === 'done' && !isAnnounced(m) && m.id !== 'F' && !closedRevealIds.has(m.id)) ?? null
       : null;
   const champion = isAnnounced(final);
-  // 추첨 전에는 준결승 두 쌍 대신 중앙 집결 박스 하나 (8/22 저녁 — R1 승자가 모이는 곳)
-  const semisDrawn = [semi1, semi2].every((m) => m.a !== null && m.b !== null);
-  const r1Matches = state.matches.filter((m) => m.round === 1);
 
   return (
     <main className="flex min-h-dvh flex-col px-5 pb-3 pt-5 lg:px-10">
@@ -1668,152 +1724,7 @@ export default function ViewerPage() {
       ) : live ? (
         <FocusLive state={state} match={live} />
       ) : (
-        <>
-      {/* 대진표 — xl(1280px) 이상은 피라미드형. 8/22 개편: 세 라운드 전부 R1 과 같은
-          개별 카드 열(PairColumn)로 통일. 승자 슬롯 라벨은 R1 = 트랙명(같은 트랙 대결),
-          R2/F = 진출처. xl 미만은 물리적으로 좁아 세로 스택 유지 */}
-      {/* 대진표 배경 (8/22 저녁) — 무대 스포트라이트 톤의 은은한 글로우.
-          fixed z-0 레이어라 본문에 relative z-10 필요 (FocusLive 배경과 같은 구조) */}
-      <div className="bracket-backdrop fixed inset-0 z-0" aria-hidden>
-        <div
-          className="absolute"
-          style={{
-            left: '50%', top: '-18%', width: '72vw', height: '72vw', transform: 'translateX(-50%)',
-            background: 'radial-gradient(circle, rgba(236,108,1,0.11) 0%, rgba(236,108,1,0.04) 42%, transparent 65%)',
-          }}
-        />
-        <div className="bracket-beam" style={{ left: '50%', marginLeft: '-30vw', rotate: '24deg' }} />
-        <div className="bracket-beam" style={{ left: '50%', marginLeft: '24vw', rotate: '-24deg' }} />
-        <div
-          className="absolute inset-0"
-          style={{ background: 'radial-gradient(ellipse 90% 70% at 50% 45%, transparent 55%, rgba(0,0,0,0.5) 100%)' }}
-        />
-      </div>
-      <div className="pyramid-zoom relative z-10 hidden flex-1 flex-col justify-center py-2 xl:flex">
-        {/* 연결선 + 3개 라운드를 절반 셀 그리드로 — 연결선 끝점 = 준결승 열 중심 =
-            하위 두 열 중점이 수치 없이 자동 성립 (8/22 정렬 결정 유지) */}
-        <div className="relative mx-auto grid w-fit grid-cols-2 gap-x-7 2xl:gap-x-10">
-          {/* 결선 열 — 두 셀에 걸쳐 중앙. CHAMPION 슬롯은 전용 강조 스타일 (8/22 저녁).
-              대기 카드 쌍(?카드)은 추첨 전에도 항상 보인다 (8/23 재복원 — 감추면
-              집결 4팀이 곧장 챔피언으로 가는 것처럼 읽힘: 결승 단계가 보여야 한다).
-              대기 카드는 R2 승자가 나오는 즉시 표시로 선반영 (8/23 — R1 집결과 같은
-              문법. 좌=R2-1·우=R2-2 승자, setFinal 의 a/b 매핑과 동일해 [결선 확정]
-              때 자리 점프가 없다. 확정·경기 시작 가드는 여전히 setFinal 몫) */}
-          <div className="col-span-2 flex justify-center">
-            <PairColumn
-              state={state}
-              match={{ ...final, a: final.a ?? finalistPreview[0] ?? null, b: final.b ?? finalistPreview[1] ?? null }}
-              championSlot
-              slotLabel={
-                <span className="font-display champ-slot-text text-sm tracking-[0.28em] 2xl:text-base">
-                  🏆 CHAMPION
-                </span>
-              }
-            />
-          </div>
-          {/* 연결선 줄 — 추첨 전에는 중앙 집결 박스 하나뿐이라 중앙 스텁만 (8/22 저녁) */}
-          {semisDrawn ? (
-            <div className="relative col-span-2 grid grid-cols-2 gap-x-9 2xl:gap-x-14">
-              <ConnectorHalf side="l" drawn={final.a !== null && final.b !== null} />
-              <ConnectorHalf side="r" drawn={final.a !== null && final.b !== null} />
-              {/* 그리드 gap 이 끊는 가로선 중앙 구간 + 결선으로 오르는 스텁 */}
-              <div
-                className="absolute left-1/2 w-9 -translate-x-1/2 2xl:w-14"
-                style={{ top: 14, borderTop: connLine(final.a !== null && final.b !== null) }}
-                aria-hidden
-              />
-              <div
-                className="absolute left-1/2 top-0"
-                style={{ height: 14, borderLeft: connLine(final.a !== null && final.b !== null) }}
-                aria-hidden
-              />
-            </div>
-          ) : (
-            <div className="relative col-span-2 h-8 2xl:h-9" aria-hidden>
-              <div className="absolute bottom-0 left-1/2 top-0" style={{ borderLeft: connLine(false) }} />
-            </div>
-          )}
-          {/* 준결승 — 추첨 후에만 두 쌍으로. 추첨 전에는 R1 승자 4팀이 모이는
-              중앙 박스 하나 (8/22 저녁 운영자: "가운데 박스 하나에 합쳐라") */}
-          {semisDrawn ? (
-            [semi1, semi2].map((semi) => (
-              <div key={semi.id} className="flex justify-center">
-                <PairColumn state={state} match={semi} slotLabel="FINAL 후보" />
-              </div>
-            ))
-          ) : (
-            <div className="col-span-2 flex justify-center">
-              {/* 상단 라벨("FINAL 진출 — R1 승자 집결 · 대진 추첨 대기")은 8/24 제거
-                  (운영자 "이거 좀 빼줘") — 박스·카드만으로 집결이 읽힌다 */}
-              <div className="rounded-2xl border border-dashed border-white/20 bg-white/3 px-8 py-4 2xl:px-10 2xl:py-5">
-                <div className="flex items-start justify-center gap-5 2xl:gap-6">
-                  {Array.from({ length: 4 }, (_, i) => {
-                    const idx = topTeamsForRound(state, 1, 4)[i] ?? null;
-                    const team = teamAt(state, idx);
-                    return idx !== null && team ? (
-                      <div key={idx} className="w-24 text-center 2xl:w-28">
-                        <CharacterArt characterKey={team.character} className="chip-outer mx-auto aspect-2/3 w-full" sizes="112px" />
-                        <p className="mt-1.5 line-clamp-1 text-xs font-extrabold 2xl:text-sm">{teamName(state, idx)}</p>
-                      </div>
-                    ) : (
-                      <div key={i} className="w-24 text-center 2xl:w-28">
-                        {/* 빈 슬롯 = 물음표 카드 에셋 (8/23 운영자 — 회색 ? 박스 대신) */}
-                        <div className="relative aspect-2/3 w-full opacity-70">
-                          <Image src="/card-back-Q-ver3.png" alt="" fill sizes="112px" className="object-cover" />
-                        </div>
-                        <p className="font-en mt-1.5 text-xs font-bold text-white/30 2xl:text-sm">TOP 후보</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-          {[r1Matches.slice(0, 2), r1Matches.slice(2)].map((half, i) => (
-            <div key={i} className="mt-6 flex gap-7 2xl:gap-10">
-              {half.map((m) => {
-                const track = teamAt(state, m.a)?.track;
-                return (
-                  <PairColumn
-                    key={m.id}
-                    state={state}
-                    match={m}
-                    slotBg={track ? TRACK_COLORS[track] : undefined}
-                    slotLabel={
-                      track ? (
-                        // 트랙 컬러는 배경으로 (8/22 저녁 — 글자색 표기 번복), 글자는 흰색 고정:
-                        // 네 트랙색(핑크·그린·퍼플·블루) 모두에서 흰 글자가 안전하다
-                        <span className="font-en font-extrabold tracking-wider text-white">{track} TRACK</span>
-                      ) : (
-                        '트랙 미정'
-                      )
-                    }
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 세로 스택 — xl 미만 (좁은 노트북/태블릿 폴백) */}
-      <div className="mx-auto w-full max-w-md space-y-7 pt-4 xl:hidden">
-        {[
-          { label: 'ROUND 1', matches: state.matches.filter((m) => m.round === 1), undrawn: undefined },
-          { label: 'ROUND 2', matches: [semi1, semi2], undrawn: '추첨 대기' },
-          { label: 'FINAL', matches: [final], undrawn: '결선 대진 확정 전' },
-        ].map((group) => (
-          <section key={group.label}>
-            <h2 className="font-display mb-2.5 text-sm text-white/35">{group.label}</h2>
-            <div className="space-y-3">
-              {group.matches.map((m) => (
-                <MatchCard key={m.id} state={state} match={m} undrawnLabel={group.undrawn} />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-        </>
+        <LiveRankingStage state={state} round={activeRankingRound(state)} />
       )}
 
       {/* 우승 테이크오버 — 결선 공개(=발표, 결선 특례) 시. 카운트다운 → 표 연출
