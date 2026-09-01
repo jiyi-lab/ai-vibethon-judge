@@ -38,6 +38,21 @@ function teamName(state: PublicState, index: number | null): string {
 
 const byId = (state: PublicState, id: string) => state.matches.find((m) => m.id === id)!;
 
+/**
+ * 화면에 쓰는 경기 표기 (2026-09-01 운영자 지시 — "ROUND 1, 2, 3, 4 이렇게만").
+ *
+ * 조별 발표로 형식이 바뀌면서 조 번호 하나면 충분해졌다. 운영 콘솔이 "N조" 라고 부르는
+ * 것과 같은 번호다 — 종전 "ROUND 1-2" 는 토너먼트 시절 표기라, MC 가 "2조" 라고 하는데
+ * 화면엔 "ROUND 1-2" 가 떠서 어긋났다.
+ * 라운드 2·결선은 이 형식에서 쓰지 않지만, 남아 있는 경로가 조용히 같은 번호로
+ * 겹치지 않도록 종전 표기를 유지한다.
+ */
+function matchLabel(match: Match): string {
+  if (match.round === 1) return `ROUND ${match.id.split('-')[1]}`;
+  if (match.round === 3) return 'FINAL';
+  return `ROUND ${match.round}-${match.id.split('-')[1]}`;
+}
+
 function visibleRankings(state: PublicState, hiddenMatchId?: string): VisibleRankingEntry[] {
   const totals = new Map<number, { teamIndex: number; score: number; order: number }>();
   state.matches.forEach((match, matchOrder) => {
@@ -116,9 +131,13 @@ function RankingTakeover({
   );
 }
 
-function LiveRankingStage({ state }: { state: PublicState }) {
+/**
+ * 순위 화면. 조 사이의 실시간 순위와 최종 결과가 같은 화면을 쓴다 —
+ * 다른 건 제목뿐이다 (2026-09-01 운영자 지시: 마지막 공개는 "RESULT").
+ */
+function LiveRankingStage({ state, final = false }: { state: PublicState; final?: boolean }) {
   const ranking = visibleRankings(state);
-  const title = 'LIVE RANKING';
+  const title = final ? 'RESULT' : 'LIVE RANKING';
 
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
@@ -197,7 +216,7 @@ function FinalRankingPrompt({ onShow }: { onShow: () => void }) {
  * FocusLive 의 칼 스윙이 제때 난다.
  */
 function ReadyPrompt({ match, onStart }: { match: Match; onStart: () => void }) {
-  const label = match.round === 3 ? 'FINAL' : `ROUND ${match.round}-${match.id.split('-')[1]}`;
+  const label = matchLabel(match);
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
       <div className="ranking-aura absolute inset-0" aria-hidden />
@@ -615,7 +634,7 @@ function FocusLive({ state, match }: { state: PublicState; match: Match }) {
               네 경기가 전부 같은 화면이 되고, 코드만 쓰면 관객이 못 읽는다 */}
           <div className="flex flex-col items-center gap-3">
             <span className="font-display text-3xl text-(--orange) lg:text-5xl 2xl:text-6xl">
-              {match.round === 3 ? 'FINAL' : `ROUND ${match.round}-${match.id.split('-')[1]}`}
+              {matchLabel(match)}
             </span>
             <span className="font-display text-6xl text-white/85 lg:text-8xl 2xl:text-9xl">VS</span>
           </div>
@@ -663,7 +682,7 @@ function FreezeReveal({ state, match }: { state: PublicState; match: Match }) {
         {/* 라운드 + 집계 — 뒷줄 가독이 목표라 화면 요소 중 최대 크기 */}
         <div className="flex w-full flex-col items-center gap-1">
           <span className="font-display text-4xl text-(--orange) lg:text-5xl 2xl:text-6xl">
-            {match.round === 3 ? 'FINAL' : `ROUND ${match.round}-${match.id.split('-')[1]}`}
+            {matchLabel(match)}
           </span>
           {/* 집계 양옆에 팀명+학교 (8/23 운영자 지시) — 같은 학교끼리 붙으면 숫자
               색만으로는 어느 쪽이 누구인지 확인이 안 된다. 행을 화면 전폭으로 펴야
@@ -1289,6 +1308,10 @@ export default function ViewerPage() {
   const live = state.matches.find((m) => m.status === 'live') ?? null;
   const final = byId(state, 'F');
   const allGroupResultsDone = state.matches.filter((m) => m.round === 1).every((m) => m.status === 'done');
+  // "ARE YOU READY?" 는 행사 맨 처음 한 번만 (2026-09-01 운영자 지시).
+  // 조가 하나라도 끝났으면 행사가 이미 굴러가는 중이므로 다시 띄우지 않는다 —
+  // 서버 상태로 판정하니 스크린을 새로고침해도 중간에 되살아나지 않는다.
+  const anyGroupDone = state.matches.some((m) => m.round === 1 && m.status === 'done');
   // 파생으로 둔다 — 대회가 초기화되면 아래 이펙트가 플래그를 끄기 전에도 바로 숨는다
   // (이펙트에만 맡기면 한 프레임 동안 지난 대회의 최종 순위가 번쩍인다).
   const finalRankingVisible = localFinalRankingShown && allGroupResultsDone;
@@ -1740,7 +1763,7 @@ export default function ViewerPage() {
           화면은 연출과 대진표만 남긴다. 본문 우선순위:
           순위 클로즈업 > 표 정지 화면 > 결선 표 연출 > 추첨 시퀀스 > live 대결 포커스 > 대진표 (§6.1) */}
       {finalRankingVisible ? (
-        <LiveRankingStage state={state} />
+        <LiveRankingStage state={state} final />
       ) : frozen ? (
         <FreezeReveal key={frozen.id} state={state} match={frozen} />
       ) : finalSeq ? (
@@ -1748,7 +1771,7 @@ export default function ViewerPage() {
       ) : drawSeq ? (
         <DrawSequence state={state} semis={drawSeq} />
       ) : live ? (
-        readyShownFor === live.id ? (
+        anyGroupDone || readyShownFor === live.id ? (
           <FocusLive state={state} match={live} />
         ) : (
           <ReadyPrompt match={live} onStart={() => setReadyShownFor(live.id)} />
