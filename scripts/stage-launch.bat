@@ -9,6 +9,6 @@ rem   - 종료: Alt+F4
 rem
 rem 리허설용으로 다른 주소를 쓰려면 아래 URL 만 바꾸면 된다.
 
-set URL=https://animal-league-nine.vercel.app
+set URL=https://ai-vibethon-judge.vercel.app
 
 start "" chrome --kiosk --autoplay-policy=no-user-gesture-required --no-first-run --user-data-dir=%TEMP%\al-stage "%URL%"

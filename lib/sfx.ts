@@ -41,7 +41,7 @@ const DRUM_SOURCE = '/sfx/fronbondi_skegs-drum-huge-cinematic-tom-hit-283585.mp3
  * 재생 요청 후 이 시간 안에 준비되면 낸다. 넘기면 포기 — 플립·VS 등장에 붙는
  * 소리라 늦게 나오면 화면과 어긋나서 오히려 어색하다.
  */
-const LATE_TOLERANCE_MS = 400;
+const LATE_TOLERANCE_MS = 900;
 /** 로드 재시도 상한 — 네트워크가 죽었을 때 재생마다 fetch 를 때리지 않도록. */
 const MAX_LOAD_ATTEMPTS = 5;
 
