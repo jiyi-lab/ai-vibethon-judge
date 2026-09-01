@@ -79,7 +79,7 @@ function RankingTakeover({
   const ranking = visibleRoundRankings(state, round);
   const previousRanking = visibleRoundRankings(state, round, changedMatchId);
   const previousRanks = new Map(previousRanking.map((entry, i) => [entry.teamIndex, i + 1]));
-  const title = 'RANKING';
+  const title = 'LIVE RANKING';
   const limit = round === 1 ? 8 : round === 2 ? 4 : 2;
   const visible = ranking.slice(0, limit);
 
@@ -89,7 +89,6 @@ function RankingTakeover({
       <div className="ranking-panel w-full max-w-5xl rounded-3xl border border-white/10 bg-black/45 p-8 backdrop-blur lg:p-10 2xl:max-w-6xl 2xl:p-12">
         <div className="flex items-end justify-between gap-5">
           <div>
-            <p className="font-display text-xl text-white/30 2xl:text-2xl">LIVE RANKING</p>
             <h2 className="mt-1 text-6xl font-extrabold text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h2>
           </div>
         </div>
@@ -131,7 +130,7 @@ function RankingTakeover({
 
 function LiveRankingStage({ state, round }: { state: PublicState; round: Round }) {
   const ranking = visibleRoundRankings(state, round);
-  const title = 'RANKING';
+  const title = 'LIVE RANKING';
 
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
@@ -139,7 +138,6 @@ function LiveRankingStage({ state, round }: { state: PublicState; round: Round }
       <div className="w-full max-w-6xl">
         <div className="mb-7 flex items-end justify-between gap-5">
           <div>
-            <p className="font-display text-xl text-white/30 2xl:text-2xl">LIVE RANKING</p>
             <h1 className="mt-1 text-6xl font-extrabold text-(--orange) lg:text-7xl 2xl:text-8xl">{title}</h1>
           </div>
         </div>
