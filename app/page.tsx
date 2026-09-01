@@ -132,12 +132,29 @@ function RankingTakeover({
 }
 
 /**
+ * 시상대 톤 — 1·2·3위만 (2026-09-01 운영자 요청: "1,2,3등이 더 눈에 띄게").
+ *
+ * 색만으로는 홀 뒷줄에서 구분이 안 된다. 그래서 색·크기·자리를 같이 준다 —
+ * 1위는 한 줄을 통째로 쓰고, 등수도 숫자 대신 디스플레이 서체의 1ST/2ND/3RD 로 읽힌다.
+ * 금·은·동은 중립색이라 브랜드 오렌지(제목·글로우)와 부딪히지 않는다.
+ */
+const PODIUM = [
+  { label: '1ST', ink: '#ffc94d', edge: 'rgba(255,201,77,0.55)', glow: 'rgba(240,165,0,0.30)', wash: 'rgba(255,201,77,0.10)' },
+  { label: '2ND', ink: '#dbe3ef', edge: 'rgba(219,227,239,0.40)', glow: 'rgba(190,205,225,0.16)', wash: 'rgba(219,227,239,0.06)' },
+  { label: '3RD', ink: '#e0a172', edge: 'rgba(224,161,114,0.42)', glow: 'rgba(200,120,60,0.18)', wash: 'rgba(224,161,114,0.07)' },
+] as const;
+
+/**
  * 순위 화면. 조 사이의 실시간 순위와 최종 결과가 같은 화면을 쓴다 —
  * 다른 건 제목뿐이다 (2026-09-01 운영자 지시: 마지막 공개는 "RESULT").
+ *
+ * 시상대 강조는 3팀 이상 집계됐을 때만 켠다. 1조만 끝나 두 팀뿐인 실시간 순위에
+ * 금·은을 붙이면 아직 정해지지도 않은 결과를 단정하는 화면이 된다.
  */
 function LiveRankingStage({ state, final = false }: { state: PublicState; final?: boolean }) {
   const ranking = visibleRankings(state);
   const title = final ? 'RESULT' : 'LIVE RANKING';
+  const podium = ranking.length >= 3;
 
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
@@ -150,19 +167,55 @@ function LiveRankingStage({ state, final = false }: { state: PublicState; final?
         </div>
         <div className="grid gap-3 lg:grid-cols-2 2xl:gap-4">
           {ranking.length > 0 ? (
-            ranking.map((entry, i) => (
-              <div
-                key={entry.teamIndex}
-                className="ranking-row flex items-center gap-5 rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-4"
-                style={{ animationDelay: `${0.05 + i * 0.05}s` }}
-              >
-                <span className="font-en w-14 text-4xl font-extrabold text-white/35 2xl:text-5xl">{i + 1}</span>
-                <CharacterArt characterKey={teamAt(state, entry.teamIndex)?.character ?? null} className="aspect-2/3 w-16 2xl:w-20" sizes="80px" />
-                <div className="min-w-0 flex-1">
-                  <span className="line-clamp-1 text-3xl font-extrabold text-white 2xl:text-4xl">{teamName(state, entry.teamIndex)}</span>
+            ranking.map((entry, i) => {
+              const medal = podium && i < 3 ? PODIUM[i] : null;
+              const champion = medal !== null && i === 0;
+              return (
+                <div
+                  key={entry.teamIndex}
+                  className={`ranking-row flex items-center rounded-2xl border ${
+                    champion
+                      ? 'justify-center gap-6 px-6 py-6 lg:col-span-2 2xl:gap-8 2xl:px-8'
+                      : 'gap-5 px-5 py-4'
+                  } ${medal ? '' : 'border-white/10 bg-white/[0.045]'}`}
+                  style={{
+                    animationDelay: `${0.05 + i * 0.05}s`,
+                    ...(medal
+                      ? {
+                          borderColor: medal.edge,
+                          background: `linear-gradient(90deg, ${medal.wash} 0%, rgba(255,255,255,0.03) 60%)`,
+                          boxShadow: `0 0 ${champion ? 60 : 34}px ${medal.glow}`,
+                        }
+                      : {}),
+                  }}
+                >
+                  {medal ? (
+                    <span
+                      className={`font-display shrink-0 ${champion ? 'text-6xl 2xl:text-8xl' : 'w-20 text-4xl 2xl:w-24 2xl:text-5xl'}`}
+                      style={{ color: medal.ink }}
+                    >
+                      {medal.label}
+                    </span>
+                  ) : (
+                    <span className="font-en w-14 shrink-0 text-4xl font-extrabold text-white/30 2xl:text-5xl">{i + 1}</span>
+                  )}
+                  <CharacterArt
+                    characterKey={teamAt(state, entry.teamIndex)?.character ?? null}
+                    className={`aspect-2/3 ${champion ? 'w-28 2xl:w-36' : medal ? 'w-20 2xl:w-24' : 'w-16 2xl:w-20'}`}
+                    sizes="144px"
+                  />
+                  <div className={`min-w-0 ${champion ? '' : 'flex-1'}`}>
+                    <span
+                      className={`line-clamp-1 font-extrabold text-white ${
+                        champion ? 'text-5xl 2xl:text-7xl' : medal ? 'text-4xl 2xl:text-5xl' : 'text-3xl 2xl:text-4xl'
+                      }`}
+                    >
+                      {teamName(state, entry.teamIndex)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="col-span-full rounded-2xl border border-dashed border-white/10 py-24 text-center text-3xl font-extrabold text-white/30">
               집계 대기
