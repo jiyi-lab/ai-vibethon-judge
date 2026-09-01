@@ -268,7 +268,15 @@ function FinalRankingPrompt({ onShow }: { onShow: () => void }) {
  * 그래서 unlockSfx() 를 먼저 기다린 뒤 넘어간다. 그래야 곧이어 마운트되는
  * FocusLive 의 칼 스윙이 제때 난다.
  */
-function ReadyPrompt({ match, onStart }: { match?: Match | null; onStart?: () => void }) {
+function ReadyPrompt({
+  match,
+  onStart,
+  error,
+}: {
+  match?: Match | null;
+  onStart?: () => void;
+  error?: string;
+}) {
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
       <div className="ranking-aura absolute inset-0" aria-hidden />
@@ -278,7 +286,7 @@ function ReadyPrompt({ match, onStart }: { match?: Match | null; onStart?: () =>
             같은 화면에 라운드 표기와 버튼이 붙는 식으로 이어진다. */}
         {match && <span className="font-display text-3xl text-(--orange) lg:text-4xl 2xl:text-5xl">{matchLabel(match)}</span>}
         <h1 className={`font-display text-6xl text-white lg:text-8xl 2xl:text-9xl ${match ? 'mt-2' : ''}`}>ARE YOU READY?</h1>
-        {match && onStart && (
+        {onStart && (
           <button
             onClick={() => {
               // await 금지 — 위 FinalRankingPrompt 와 같은 이유. 언락은 걸어만 두고
@@ -291,6 +299,9 @@ function ReadyPrompt({ match, onStart }: { match?: Match | null; onStart?: () =>
           >
             대결 시작
           </button>
+        )}
+        {error && (
+          <p className="mx-auto mt-6 max-w-xl text-base font-bold text-red-400 lg:text-lg">{error}</p>
         )}
       </div>
     </section>
@@ -1259,6 +1270,7 @@ export default function ViewerPage() {
   // 그게 오히려 안전하다: 새로고침한 창은 자동재생 정책 때문에 소리도 함께 잠겨 있어서
   // 어차피 클릭 한 번이 필요하다. 이 버튼이 그 클릭을 겸한다.
   const [readyShownFor, setReadyShownFor] = useState<string | null>(null);
+  const [startError, setStartError] = useState('');
   const [localFinalRankingShown, setLocalFinalRankingShown] = useState(
     () => typeof window !== 'undefined' && localStorage.getItem(FINAL_RANKING_STORAGE_KEY) === '1',
   );
@@ -1843,10 +1855,33 @@ export default function ViewerPage() {
       ) : anyGroupDone ? (
         <LiveRankingStage state={state} />
       ) : (
-        // 행사 시작 전 첫 화면 (2026-09-01 운영자: "첫 화면은 ARE YOU READY? 여야 한다").
-        // 집계된 게 하나도 없는 상태에서 "LIVE RANKING · 집계 대기" 를 띄우면
-        // 시작 전 무대에 빈 표가 걸려 있는 꼴이다.
-        <ReadyPrompt />
+        // 행사 시작 전 첫 화면 (2026-09-01 운영자: "첫 화면부터 ARE YOU READY? 대결 시작
+        // 이렇게만, 굳이 콘솔에서 발표 시작 안 누르고"). 이 버튼이 1조를 직접 시작한다 —
+        // 콘솔의 [발표 시작] 을 거치지 않고 한 번에 VS 로 간다.
+        //
+        // 쓰기 API 라 운영 세션 쿠키가 필요하다 (SPEC §7: 쓰기는 서버에서 PIN 검증).
+        // 스크린을 띄운 브라우저가 /admin 에 한 번 로그인해 둔 상태여야 하고,
+        // 아니면 아래 문구로 그 사실을 말해준다.
+        <ReadyPrompt
+          error={startError}
+          onStart={async () => {
+            const next = state.matches.find((m) => m.round === 1 && m.status === 'ready');
+            if (!next) return;
+            setStartError('');
+            try {
+              const res = await fetch('/api/admin/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'startMatch', matchId: next.id }),
+              });
+              if (!res.ok) throw new Error(String(res.status));
+              setReadyShownFor(next.id); // 곧바로 VS 로 — 한 번 누르면 끝
+              void poll();
+            } catch {
+              setStartError('이 브라우저에 운영 콘솔 로그인이 없어 시작할 수 없습니다. /admin 에서 한 번 로그인한 뒤 다시 눌러주세요.');
+            }
+          }}
+        />
       )}
 
       {/* 우승 테이크오버 — 결선 공개(=발표, 결선 특례) 시. 카운트다운 → 표 연출

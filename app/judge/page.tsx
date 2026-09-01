@@ -151,8 +151,17 @@ function JudgeForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState<string[]>([]); // 이번 경기에서 제출 완료된 명의들
+  // 한 번이라도 값을 입력한 칸. 0 점이 정당한 점수라 "값이 0" 으로는 안 채운 칸을 못 가린다 —
+  // 손을 댔는지를 따로 기억해야 빈칸과 0점을 구분할 수 있다 (2026-09-01).
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set());
+  // 제출을 눌러본 뒤에만 빈칸을 빨갛게 칠한다. 처음부터 온 화면이 빨가면 경고가 안 읽힌다.
+  const [attempted, setAttempted] = useState(false);
 
   const submitAs = proxyMode && proxyName ? proxyName : identity.name;
+  const fieldId = (side: Side, key: string) => `sc-${side}-${key}`;
+  const missing = (['A', 'B'] as const).flatMap((side) =>
+    CRITERIA.filter((c) => !touched.has(`${side}:${c.key}`)).map((c) => ({ side, key: c.key, label: c.label })),
+  );
 
   // 모바일: 가로형 행 카드 (스크롤 최소화) / md 이상: 세로형 대형 카드 — 태블릿·노트북에서
   // 좁은 띠로 보이던 것을 캐릭터 아트 중심의 큰 카드 두 장이 좌우로 서게 바꿨다.
@@ -186,6 +195,18 @@ function JudgeForm({
 
   const submit = async () => {
     if (busy) return;
+    // 빈칸이 있으면 보내지 않고 첫 빈칸으로 데려간다 (2026-09-01 운영자 지시).
+    // 안 채운 칸은 서버에서 0 점으로 저장돼 조용히 총점을 깎는다 — 심사위원은
+    // 자기가 뭘 빠뜨렸는지 알 방법이 없으므로 여기서 잡아야 한다.
+    if (missing.length > 0) {
+      setAttempted(true);
+      const first = missing[0];
+      setError(`아직 채우지 않은 항목이 ${missing.length}개 있습니다. 먼저 "${first.label}" 부터 채워주세요.`);
+      const el = document.getElementById(fieldId(first.side, first.key));
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (el as HTMLInputElement | null)?.focus({ preventScroll: true });
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -265,19 +286,25 @@ function JudgeForm({
                     </span>
                   </div>
                   <input
+                    id={fieldId(side, criterion.key)}
                     type="number"
                     inputMode="numeric"
                     min={0}
                     max={criterion.max}
-                    value={scores[side][criterion.key] || ''}
+                    value={touched.has(`${side}:${criterion.key}`) ? scores[side][criterion.key] : ''}
                     onChange={(e) => {
                       const next = Math.max(0, Math.min(criterion.max, Number(e.target.value) || 0));
+                      setTouched((prev) => new Set(prev).add(`${side}:${criterion.key}`));
                       setScores((prev) => ({
                         ...prev,
                         [side]: { ...prev[side], [criterion.key]: next },
                       }));
                     }}
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm font-bold outline-none focus:border-(--orange)"
+                    className={`w-full rounded-lg border bg-black/30 px-3 py-2 text-sm font-bold outline-none focus:border-(--orange) ${
+                      attempted && !touched.has(`${side}:${criterion.key}`)
+                        ? 'border-red-500/80 bg-red-500/10'
+                        : 'border-white/15'
+                    }`}
                   />
                 </label>
               ))}
