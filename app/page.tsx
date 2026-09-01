@@ -79,7 +79,7 @@ function RankingTakeover({
   const ranking = visibleRoundRankings(state, round);
   const previousRanking = visibleRoundRankings(state, round, changedMatchId);
   const previousRanks = new Map(previousRanking.map((entry, i) => [entry.teamIndex, i + 1]));
-  const title = round === 1 ? 'ROUND 1 순위' : round === 2 ? 'ROUND 2 순위' : 'FINAL 순위';
+  const title = 'RANKING';
   const limit = round === 1 ? 8 : round === 2 ? 4 : 2;
   const visible = ranking.slice(0, limit);
 
@@ -131,7 +131,7 @@ function RankingTakeover({
 
 function LiveRankingStage({ state, round }: { state: PublicState; round: Round }) {
   const ranking = visibleRoundRankings(state, round);
-  const title = round === 1 ? 'ROUND 1 실시간 순위' : round === 2 ? 'ROUND 2 실시간 순위' : 'FINAL 순위';
+  const title = 'RANKING';
 
   return (
     <section className="relative z-10 grid flex-1 place-items-center overflow-hidden px-4 py-6">
