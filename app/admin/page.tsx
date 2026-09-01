@@ -28,6 +28,7 @@ type AdminState = {
   judges: string[];
   judgeCode: string;
   timer: TimerState | null;
+  finalRankingShown: boolean;
   /** 서버 현재 시각 — 기기 시계 편차 보정용 (lib/clock.ts). 구버전 응답엔 없다 */
   now?: number;
   rev: number;
@@ -623,7 +624,9 @@ function MatchCard({
       }}
     >
       <div className="mb-3 flex items-center justify-between">
-        <span className="font-mono text-sm font-bold text-white/70">{match.id}</span>
+        <span className="font-mono text-sm font-bold text-white/70">
+          {match.round === 1 ? `${match.id.split('-')[1]}조` : match.id}
+        </span>
         <span
           className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${match.status === 'live' ? 'animate-pulse' : ''}`}
           style={{
@@ -647,7 +650,7 @@ function MatchCard({
           onClick={onStart}
           className="mt-3 w-full rounded-lg border border-[var(--orange)]/50 py-2 text-sm font-bold text-[var(--orange)] hover:bg-[var(--orange-glow)] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/25"
         >
-          {resolved ? '경기 시작' : '대진 미확정'}
+          {resolved ? '발표 시작' : '조 미확정'}
         </button>
       )}
 
@@ -661,10 +664,6 @@ function MatchCard({
         </div>
       )}
 
-      {/* 2단계 공개의 2단계 (8/22, §6.1 · 8/25 개정) — 공개 후 스크린은 카드 정지
-          화면에 머문다. 심사위원 코멘트가 끝나면 이 버튼으로 대진표로 복귀시킨다
-          (결과 화면은 8/25 제거 — 발표 즉시 대진표).
-          결선에는 안 뜬다 — 공개 즉시 발표 간주(결선 특례)라 isAnnounced 가 이미 true */}
       {match.status === 'done' && !isAnnounced(match) && (
         <div className="mt-2">
           <button
@@ -672,10 +671,10 @@ function MatchCard({
             onClick={onAnnounce}
             className="w-full animate-pulse rounded-lg bg-[var(--orange)] py-2 text-sm font-extrabold text-white disabled:opacity-40"
           >
-            📣 코멘트 끝 — 대진표로 이동
+            코멘트 끝 — 순위 보기
           </button>
           <p className="mt-1 text-[11px] text-white/40">
-            스크린은 표 카드 정지 화면입니다. 심사위원 코멘트가 끝나면 누르세요 — 스크린이 바로 대진표로 돌아갑니다.
+            스크린은 표 카드 정지 화면입니다. 심사위원 코멘트가 끝나면 누르세요.
           </p>
         </div>
       )}
@@ -695,18 +694,14 @@ function MatchesTab({
   askConfirm: (c: Confirm) => void;
 }) {
   const r1 = state.matches.filter((m) => m.round === 1);
-  const r2 = state.matches.filter((m) => m.round === 2);
-  const final = state.matches.find((m) => m.round === 3);
-
-  const canDraw = r1.every((m) => m.status === 'done') && r2.every((m) => m.a === null && m.b === null);
-  const canFinal = r2.every((m) => m.status === 'done') && final !== undefined && final.a === null && final.b === null;
+  const canShowFinalRanking = r1.every((m) => m.status === 'done');
   const live = state.matches.find((m) => m.status === 'live');
 
   const startWithGuard = (match: Match) => {
     if (live && live.id !== match.id) {
       askConfirm({
-        title: `${match.id} 경기 시작`,
-        body: `${live.id} 가 진행 중입니다.\n이 경기를 시작하면 ${live.id} 는 대기로 돌아갑니다 (제출된 표는 유지).`,
+        title: `${match.id.split('-')[1] ?? match.id}조 발표 시작`,
+        body: `${live.id} 가 진행 중입니다.\n이 조를 시작하면 ${live.id} 는 대기로 돌아갑니다 (제출된 표는 유지).`,
         confirmLabel: '시작',
         onConfirm: () => run({ action: 'startMatch', matchId: match.id }),
       });
@@ -727,11 +722,11 @@ function MatchesTab({
     // 결선은 공개가 곧 발표 (결선 특례, 8/22 저녁 — MC 큐시트 카운트다운 대응):
     // 표 연출이 끝나면 우승 무대가 자동으로 뜬다는 걸 확인 창에서 못박는다
     askConfirm({
-      title: match.id === 'F' ? '결선 공개 = 우승 발표' : '페어 우세 공개',
+      title: match.id === 'F' ? '결선 공개 = 우승 발표' : '조 결과 공개',
       body:
         match.id === 'F'
           ? `「${name}」 우승으로 공개합니다.\n${tallyText}\n\n스크린에 5-4-3-2-1 카운트다운(6초)이 뜬 뒤 표 카드가 점점 빠르게 열리고 연출이 끝나면 우승 무대로 자동 전환됩니다. 되돌릴 수 없습니다.`
-          : `「${name}」 페어 우세로 공개합니다.\n${tallyText}\n\n이 공개는 대결 탈락이 아니라 현장 연출용입니다. 다음 라운드는 라운드 전체 총점 상위 팀으로 확정됩니다.`,
+          : `「${name}」 쪽 총점 우세로 공개합니다.\n${tallyText}\n\n이 공개는 탈락 결정이 아니라 현재 순위 반영용입니다. 전체 순위는 모든 조의 총점으로 계산됩니다.`,
       confirmLabel: '공개 (되돌릴 수 없음)',
       danger: true,
       onConfirm: () => run({ action: 'revealResult', matchId: match.id, winner: side }),
@@ -754,71 +749,28 @@ function MatchesTab({
         </div>
       )}
 
-      {section('라운드 1 — 페어 발표')}
+      {section(
+        '조별 발표',
+        <button
+          disabled={!canShowFinalRanking || busy || state.finalRankingShown}
+          onClick={() =>
+            askConfirm({
+              title: '최종 결과 보기',
+              body: '모든 조의 총점 기준 최종 LIVE RANKING 화면을 스크린에 띄웁니다.',
+              confirmLabel: '최종 결과 보기',
+              onConfirm: () => run({ action: 'showFinalRanking' }),
+            })
+          }
+          className="rounded-lg bg-[var(--orange)] px-4 py-1.5 text-sm font-bold text-white disabled:opacity-25"
+        >
+          {state.finalRankingShown ? '최종 결과 표시 중' : '최종 결과 보기'}
+        </button>,
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         {r1.map((m) => (
           <MatchCard key={m.id} match={m} state={state} busy={busy} onStart={() => startWithGuard(m)} onReveal={revealWithConfirm(m)} onAnnounce={() => announceMatch(m)} />
         ))}
       </div>
-
-      {section(
-        '라운드 2 — 트랙 간 랜덤',
-        <button
-          disabled={!canDraw || busy}
-          onClick={() =>
-            askConfirm({
-              title: '라운드 2 대진 추첨',
-              body: 'R1 전체 총점 상위 4팀을 무작위로 짝짓습니다.\n추첨은 한 번만 가능하며 다시 섞을 수 없습니다.',
-              confirmLabel: '추첨',
-              onConfirm: () => run({ action: 'drawRound2' }),
-            })
-          }
-          className="rounded-lg bg-[var(--orange)] px-4 py-1.5 text-sm font-bold text-white disabled:opacity-25"
-        >
-          🎲 대진 추첨
-        </button>,
-      )}
-      {canDraw && (
-        <ManualDraw
-          state={state}
-          busy={busy}
-          onDraw={(pairs, label) =>
-            askConfirm({
-              title: '수동 대진 확정',
-              body: `${label}\n\nR1 전체 총점 상위 4팀 기준입니다. 수동 확정도 한 번만 가능하며 되돌릴 수 없습니다.\n스크린 연출은 랜덤 추첨과 동일하게 재생됩니다.`,
-              confirmLabel: '이 대진으로 확정',
-              danger: true,
-              onConfirm: () => run({ action: 'drawRound2', pairs }),
-            })
-          }
-        />
-      )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {r2.map((m) => (
-          <MatchCard key={m.id} match={m} state={state} busy={busy} onStart={() => startWithGuard(m)} onReveal={revealWithConfirm(m)} onAnnounce={() => announceMatch(m)} />
-        ))}
-      </div>
-
-      {section(
-        '결선',
-        <button
-          disabled={!canFinal || busy}
-          onClick={() =>
-            askConfirm({
-              title: '결선 대진 확정',
-              body: 'R2 전체 총점 상위 2팀으로 결선 대진을 확정합니다.',
-              confirmLabel: '확정',
-              onConfirm: () => run({ action: 'setFinal' }),
-            })
-          }
-          className="rounded-lg bg-[var(--orange)] px-4 py-1.5 text-sm font-bold text-white disabled:opacity-25"
-        >
-          결선 확정
-        </button>,
-      )}
-      {final && (
-        <MatchCard match={final} state={state} busy={busy} onStart={() => startWithGuard(final)} onReveal={revealWithConfirm(final)} onAnnounce={() => announceMatch(final)} />
-      )}
     </div>
   );
 }

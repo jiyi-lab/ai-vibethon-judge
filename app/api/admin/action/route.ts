@@ -13,6 +13,7 @@ import {
   setTimer,
   revealResult,
   announceResult,
+  showFinalRanking,
   finalRevealOrder,
   judgeRevealOrder,
   drawRound2,
@@ -84,6 +85,7 @@ function adminView(row: StateRow) {
     judges,
     judgeCode,
     timer: row.data.timer ?? null,
+    finalRankingShown: row.data.finalRankingShown === true,
     /** 서버 현재 시각 — 기기 시계 편차 보정용 (lib/clock.ts) */
     now: Date.now(),
     rev: row.rev,
@@ -199,6 +201,9 @@ export async function POST(request: Request): Promise<Response> {
           const matchId = asString(body.matchId, 'matchId', 8);
           return ok({ state: adminView(await mutate((s) => announceResult(s, matchId))) });
         }
+
+        case 'showFinalRanking':
+          return ok({ state: adminView(await mutate((s) => showFinalRanking(s))) });
 
         case 'setTimer': {
           // 타이머 단계 전환/재시작 (§6.2 개정 8/19) — live 경기의 라운드 프리셋만 허용

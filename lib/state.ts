@@ -111,11 +111,12 @@ export function toPublicState(row: StateRow): {
   teams: TournamentState['teams'];
   matches: TournamentState['matches'];
   timer: TournamentState['timer'];
+  finalRankingShown: boolean;
   rev: number;
 } {
   const { teams, matches } = row.data;
   // timer ?? null: 필드 도입(8/19) 전 문서에는 없다
-  return { teams, matches, timer: row.data.timer ?? null, rev: row.rev };
+  return { teams, matches, timer: row.data.timer ?? null, finalRankingShown: row.data.finalRankingShown === true, rev: row.rev };
 }
 
 /** 전체 초기화의 vote 쪽 — 모든 제출 레코드 삭제 (명세 §5). */

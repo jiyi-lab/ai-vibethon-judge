@@ -19,9 +19,9 @@ import { armSfx, playDrum, playVersus } from '@/lib/sfx';
 import { isAnnounced, roundRankings, winningTeamId, type Match, type Round, type Team } from '@/lib/tournament';
 import type { CSSProperties, ReactNode } from 'react';
 
-type PublicState = { teams: Team[]; matches: Match[]; rev: number };
-type RankingSequence = { round: Round; changedMatchId: string; nonce: number };
-type VisibleRankingEntry = { teamIndex: number; score: number; order: number; matchId: string };
+type PublicState = { teams: Team[]; matches: Match[]; finalRankingShown: boolean; rev: number };
+type RankingSequence = { changedMatchId: string; nonce: number };
+type VisibleRankingEntry = { teamIndex: number; score: number; order: number };
 const RANKING_TAKEOVER_MS = 6500;
 
 // ------------------------------------------------------------
@@ -39,49 +39,38 @@ function teamName(state: PublicState, index: number | null): string {
 
 const byId = (state: PublicState, id: string) => state.matches.find((m) => m.id === id)!;
 
-function visibleRoundRankings(state: PublicState, round: Round, hiddenMatchId?: string): VisibleRankingEntry[] {
-  const entries = state.matches
-    .filter((match) => match.round === round)
-    .flatMap((match, matchOrder) =>
-      (['A', 'B'] as const).flatMap((side, sideOrder) => {
-        if (match.id === hiddenMatchId || !match.scoreSummary) return [];
-        const teamIndex = side === 'A' ? match.a : match.b;
-        if (teamIndex === null) return [];
-        const score = match.scoreSummary[side];
-        return score === undefined ? [] : [{ teamIndex, score, order: matchOrder * 2 + sideOrder, matchId: match.id }];
-      }),
-    );
-
-  return entries.sort((a, b) => b.score - a.score || a.teamIndex - b.teamIndex);
-}
-
-function activeRankingRound(state: PublicState): Round {
-  const live = state.matches.find((match) => match.status === 'live');
-  if (live) return live.round;
-  const frozen = state.matches.find((match) => match.status === 'done' && !isAnnounced(match) && match.id !== 'F');
-  if (frozen) return frozen.round;
-  const final = byId(state, 'F');
-  if (final.a !== null && final.b !== null) return 3;
-  const semis = state.matches.filter((match) => match.round === 2);
-  if (semis.some((match) => match.a !== null || match.b !== null || match.status !== 'ready')) return 2;
-  return 1;
+function visibleRankings(state: PublicState, hiddenMatchId?: string): VisibleRankingEntry[] {
+  const totals = new Map<number, { teamIndex: number; score: number; order: number }>();
+  state.matches.forEach((match, matchOrder) => {
+    if (match.id === hiddenMatchId || !match.scoreSummary) return;
+    (['A', 'B'] as const).forEach((side, sideOrder) => {
+      const teamIndex = side === 'A' ? match.a : match.b;
+      const score = match.scoreSummary?.[side];
+      if (teamIndex === null || score === undefined) return;
+      const current = totals.get(teamIndex);
+      if (current) {
+        current.score += score;
+        current.order = Math.min(current.order, matchOrder * 2 + sideOrder);
+      } else {
+        totals.set(teamIndex, { teamIndex, score, order: matchOrder * 2 + sideOrder });
+      }
+    });
+  });
+  return [...totals.values()].sort((a, b) => b.score - a.score || a.order - b.order || a.teamIndex - b.teamIndex);
 }
 
 function RankingTakeover({
   state,
-  round,
   changedMatchId,
 }: {
   state: PublicState;
-  round: Round;
   changedMatchId?: string;
 }) {
-  const ranking = visibleRoundRankings(state, round);
-  const previousRanking = visibleRoundRankings(state, round, changedMatchId);
+  const ranking = visibleRankings(state);
+  const previousRanking = visibleRankings(state, changedMatchId);
   const previousRanks = new Map(previousRanking.map((entry, i) => [entry.teamIndex, i + 1]));
   const title = 'LIVE RANKING';
-  const limit = round === 1 ? 8 : round === 2 ? 4 : 2;
-  const visible = ranking.slice(0, limit);
+  const visible = ranking;
 
   return (
     <section className="ranking-stage fixed inset-0 z-20 grid place-items-center overflow-hidden bg-black px-6">
@@ -128,8 +117,8 @@ function RankingTakeover({
   );
 }
 
-function LiveRankingStage({ state, round }: { state: PublicState; round: Round }) {
-  const ranking = visibleRoundRankings(state, round);
+function LiveRankingStage({ state }: { state: PublicState }) {
+  const ranking = visibleRankings(state);
   const title = 'LIVE RANKING';
 
   return (
@@ -1157,7 +1146,7 @@ export default function ViewerPage() {
   const showRankingSequence = useCallback((match: Match) => {
     if (match.id === 'F' || closedRevealRef.current.has(match.id)) return;
     const nonce = Date.now();
-    setRankingSeq({ round: match.round, changedMatchId: match.id, nonce });
+    setRankingSeq({ changedMatchId: match.id, nonce });
     if (rankingTimerRef.current) clearTimeout(rankingTimerRef.current);
     rankingTimerRef.current = setTimeout(() => {
       closedRevealRef.current.add(match.id);
@@ -1180,7 +1169,7 @@ export default function ViewerPage() {
       const body = await res.json();
       if (!body?.ok || body.rev < revRef.current) return; // 실패·낡은 스냅샷 → 마지막 정상 유지
       revRef.current = body.rev;
-      const next: PublicState = { teams: body.teams, matches: body.matches, rev: body.rev };
+      const next: PublicState = { teams: body.teams, matches: body.matches, finalRankingShown: body.finalRankingShown === true, rev: body.rev };
 
       // 발표 전이 감지 (2단계 공개의 2단계, 8/22) — announced 로 바뀌는 순간 결과 화면.
       // 정지 화면(1단계)은 상태 파생이라 감지가 필요 없다 (done && !announced 면 항상 표시).
@@ -1697,11 +1686,12 @@ export default function ViewerPage() {
       {/* 헤더·푸터·안내 문구는 전부 제거 (8/22 운영자: 무대에 필요없는 멘트 삭제) —
           화면은 연출과 대진표만 남긴다. 본문 우선순위:
           순위 클로즈업 > 표 정지 화면 > 결선 표 연출 > 추첨 시퀀스 > live 대결 포커스 > 대진표 (§6.1) */}
-      {rankingSeq ? (
+      {state.finalRankingShown ? (
+        <LiveRankingStage state={state} />
+      ) : rankingSeq ? (
         <RankingTakeover
           key={rankingSeq.nonce}
           state={state}
-          round={rankingSeq.round}
           changedMatchId={rankingSeq.changedMatchId}
         />
       ) : frozen ? (
@@ -1713,12 +1703,12 @@ export default function ViewerPage() {
       ) : live ? (
         <FocusLive state={state} match={live} />
       ) : (
-        <LiveRankingStage state={state} round={activeRankingRound(state)} />
+        <LiveRankingStage state={state} />
       )}
 
       {/* 우승 테이크오버 — 결선 공개(=발표, 결선 특례) 시. 카운트다운 → 표 연출
           (finalSeq) 이 도는 동안은 뒤로 미룬다 (0표 백업·새로고침은 카운트 없이 직행) */}
-      {champion && countdown && (
+      {!state.finalRankingShown && champion && countdown && (
         <Countdown
           onDone={() => {
             setCountdown(false);
@@ -1732,7 +1722,7 @@ export default function ViewerPage() {
           }}
         />
       )}
-      {champion && !finalSeq && !countdown && <ChampionTakeover state={state} final={final} />}
+      {!state.finalRankingShown && champion && !finalSeq && !countdown && <ChampionTakeover state={state} final={final} />}
 
     </main>
   );

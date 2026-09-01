@@ -111,6 +111,8 @@ export type TournamentState = {
   adminPin: string;
   /** 진행 중 타이머. 옵셔널인 이유: 이 필드 도입(8/19) 전에 저장된 문서에는 없다. */
   timer?: TimerState | null;
+  /** 최종 순위 화면 표시 여부. 구버전 상태에는 없으므로 읽는 쪽은 false 로 보정한다. */
+  finalRankingShown?: boolean;
 };
 
 // ------------------------------------------------------------
@@ -183,6 +185,7 @@ export function createInitialState(overrides?: Partial<TournamentState>): Tourna
     judgeCode: 'AIVIBE',
     adminPin: '0825',
     timer: null,
+    finalRankingShown: false,
     ...overrides,
   };
 }
@@ -438,6 +441,17 @@ export function announceResult(state: TournamentState, matchId: string): Tournam
   return replaceMatch(state, target.id, { announced: true });
 }
 
+export function showFinalRanking(state: TournamentState): TournamentState {
+  const unfinished = ROUND1_IDS.filter((id) => getMatch(state, id).status !== 'done');
+  if (unfinished.length > 0) {
+    throw new TournamentError(
+      'ROUND1_INCOMPLETE',
+      `모든 조 발표가 끝나야 최종 결과를 볼 수 있습니다. 남은 조: ${unfinished.join(', ')}`,
+    );
+  }
+  return { ...state, finalRankingShown: true, timer: null };
+}
+
 /** 발표까지 끝났는가 — 표 0건 공개(백업 모드)는 정지 화면이 없어 즉시 발표로 친다. */
 export function isAnnounced(match: Match): boolean {
   if (match.status !== 'done') return false;
@@ -681,6 +695,7 @@ export function reset(state: TournamentState, opts?: { clearTeams?: boolean }): 
     judgeCode: state.judgeCode,
     adminPin: state.adminPin,
     judges: [...state.judges],
+    finalRankingShown: false,
   });
   if (opts?.clearTeams) {
     return { ...fresh, teams: Array.from({ length: TEAM_COUNT }, () => ({ ...EMPTY_TEAM })) };
